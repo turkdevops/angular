@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -8,7 +8,7 @@
 
 import {DOCUMENT, ɵparseCookieValue as parseCookieValue} from '@angular/common';
 import {Inject, Injectable, InjectionToken, PLATFORM_ID} from '@angular/core';
-import {Observable} from 'rxjs/Observable';
+import {Observable} from 'rxjs';
 
 import {HttpHandler} from './backend';
 import {HttpInterceptor} from './interceptor';
@@ -21,7 +21,7 @@ export const XSRF_HEADER_NAME = new InjectionToken<string>('XSRF_HEADER_NAME');
 /**
  * Retrieves the current XSRF token to use with the next outgoing request.
  *
- * @stable
+ * @publicApi
  */
 export abstract class HttpXsrfTokenExtractor {
   /**

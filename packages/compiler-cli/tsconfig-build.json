@@ -4,13 +4,24 @@
   "compilerOptions": {
     "module": "commonjs",
     "stripInternal": false,
-    "target": "es5",
+    "target": "es2015",
+    "lib": [
+      "es2015",
+      "es2017.object",
+    ],
     "baseUrl": ".",
     "rootDir": ".",
     "paths": {
       "@angular/compiler": ["../../dist/packages/compiler"]
     },
+    "strict": true,
+    "types": [
+      "node"
+    ],
     "outDir": "../../dist/packages/compiler-cli"
+  },
+  "bazelOptions": {
+    "suppressTsconfigOverrideWarnings": true
   },
 
   "exclude": [
@@ -19,12 +30,10 @@
 
   "files": [
     "index.ts",
-    "ngtools2.ts",
     "src/main.ts",
     "src/extract_i18n.ts",
     "src/language_services.ts",
     "../../node_modules/@types/node/index.d.ts",
-    "../../node_modules/@types/jasmine/index.d.ts",
-    "../../node_modules/zone.js/dist/zone.js.d.ts"
+    "../../node_modules/@types/jasmine/index.d.ts"
   ]
 }

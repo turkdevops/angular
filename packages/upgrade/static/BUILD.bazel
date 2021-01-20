@@ -1,15 +1,20 @@
+load("//tools:defaults.bzl", "ng_module")
+
 package(default_visibility = ["//visibility:public"])
 
-load("@build_bazel_rules_typescript//:defs.bzl", "ts_library")
+exports_files(["package.json"])
 
-ts_library(
+ng_module(
     name = "static",
-    srcs = glob(["**/*.ts"]),
-    module_name = "@angular/upgrade/static",
-    tsconfig = "//packages:tsconfig",
+    srcs = glob(
+        [
+            "*.ts",
+            "src/*.ts",
+        ],
+    ),
     deps = [
         "//packages/core",
         "//packages/platform-browser",
-        "//packages/platform-browser-dynamic",
+        "//packages/upgrade/src/common",
     ],
 )

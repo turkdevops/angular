@@ -1,23 +1,22 @@
-import { Component, ElementRef, HostBinding, HostListener, OnInit,
-         QueryList, ViewChild, ViewChildren } from '@angular/core';
+import { Component, ElementRef, HostBinding, HostListener, OnInit, QueryList, ViewChild, ViewChildren } from '@angular/core';
 import { MatSidenav } from '@angular/material/sidenav';
-
-import { CurrentNodes, NavigationService, NavigationNode, VersionInfo } from 'app/navigation/navigation.service';
-import { DocumentService, DocumentContents } from 'app/documents/document.service';
+import { DocumentContents, DocumentService } from 'app/documents/document.service';
+import { NotificationComponent } from 'app/layout/notification/notification.component';
+import { CurrentNodes, NavigationNode, NavigationService, VersionInfo } from 'app/navigation/navigation.service';
+import { SearchResults } from 'app/search/interfaces';
+import { SearchBoxComponent } from 'app/search/search-box/search-box.component';
+import { SearchService } from 'app/search/search.service';
 import { Deployment } from 'app/shared/deployment.service';
 import { LocationService } from 'app/shared/location.service';
 import { ScrollService } from 'app/shared/scroll.service';
-import { SearchBoxComponent } from 'app/search/search-box/search-box.component';
-import { SearchResults } from 'app/search/interfaces';
-import { SearchService } from 'app/search/search.service';
 import { TocService } from 'app/shared/toc.service';
-
-import { Observable } from 'rxjs/Observable';
-import { BehaviorSubject } from 'rxjs/BehaviorSubject';
-import { combineLatest } from 'rxjs/observable/combineLatest';
-import 'rxjs/add/operator/first';
+import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
+import { first, map } from 'rxjs/operators';
 
 const sideNavView = 'SideNav';
+export const showTopMenuWidth = 1048;
+export const dockSideNavWidth = 992;
+export const showFloatingTocWidth = 800;
 
 @Component({
   selector: 'aio-shell',
@@ -27,7 +26,7 @@ export class AppComponent implements OnInit {
 
   currentDocument: DocumentContents;
   currentDocVersion: NavigationNode;
-  currentNodes: CurrentNodes;
+  currentNodes: CurrentNodes = {};
   currentPath: string;
   docVersions: NavigationNode[];
   dtOn = false;
@@ -56,39 +55,46 @@ export class AppComponent implements OnInit {
   @HostBinding('class')
   hostClasses = '';
 
-  isFetching = false;
+  // Disable all Angular animations for the initial render.
+  @HostBinding('@.disabled')
   isStarting = true;
   isTransitioning = true;
-  isSideBySide = false;
+  isFetching = false;
+  showTopMenu = false;
+  dockSideNav = false;
   private isFetchingTimeout: any;
   private isSideNavDoc = false;
 
-  private sideBySideWidth = 992;
   sideNavNodes: NavigationNode[];
   topMenuNodes: NavigationNode[];
   topMenuNarrowNodes: NavigationNode[];
 
-  hasFloatingToc = true;
+  hasFloatingToc = false;
   private showFloatingToc = new BehaviorSubject(false);
-  private showFloatingTocWidth = 800;
   tocMaxHeight: string;
   private tocMaxHeightOffset = 0;
 
   versionInfo: VersionInfo;
 
-  get isOpened() { return this.isSideBySide && this.isSideNavDoc; }
-  get mode() { return this.isSideBySide ? 'side' : 'over'; }
+  private currentUrl: string;
+
+  get isOpened() { return this.dockSideNav && this.isSideNavDoc; }
+  get mode() { return this.dockSideNav && (this.isSideNavDoc || this.showTopMenu) ? 'side' : 'over'; }
 
   // Search related properties
   showSearchResults = false;
   searchResults: Observable<SearchResults>;
   @ViewChildren('searchBox, searchResultsView', { read: ElementRef })
   searchElements: QueryList<ElementRef>;
-  @ViewChild(SearchBoxComponent)
+  @ViewChild(SearchBoxComponent, { static: true })
   searchBox: SearchBoxComponent;
 
-  @ViewChild(MatSidenav)
+  @ViewChild(MatSidenav, { static: true })
   sidenav: MatSidenav;
+
+  @ViewChild(NotificationComponent, { static: true })
+  notification: NotificationComponent;
+  notificationAnimating = false;
 
   constructor(
     public deployment: Deployment,
@@ -105,7 +111,7 @@ export class AppComponent implements OnInit {
     // Do not initialize the search on browsers that lack web worker support
     if ('Worker' in window) {
       // Delay initialization by up to 2 seconds
-      this.searchService.initWorker('app/search/search-worker.js', 2000);
+      this.searchService.initWorker(2000);
     }
 
     this.onResize(window.innerWidth);
@@ -113,22 +119,11 @@ export class AppComponent implements OnInit {
     /* No need to unsubscribe because this root component never dies */
 
     this.documentService.currentDocument.subscribe(doc => this.currentDocument = doc);
-    // Generally, we want to delay updating the host classes for the new document, until after the
-    // leaving document has been removed (to avoid having the styles for the new document applied
-    // prematurely).
-    // On the first document, though, (when we know there is no previous document), we want to
-    // ensure the styles are applied as soon as possible to avoid flicker.
-    this.documentService.currentDocument.first().subscribe(doc => this.updateHostClassesForDoc(doc));
 
     this.locationService.currentPath.subscribe(path => {
-      // Redirect to docs if we are in not in stable mode and are not hitting a docs page
-      // (i.e. we have arrived at a marketing page)
-      if (this.deployment.mode !== 'stable' && !/^(docs$|api|guide|tutorial)/.test(path)) {
-        this.locationService.replace('docs');
-      }
       if (path === this.currentPath) {
         // scroll only if on same page (most likely a change to the hash)
-        this.autoScroll();
+        this.scrollService.scroll();
       } else {
         // don't scroll; leave that to `onDocRendered`
         this.currentPath = path;
@@ -139,47 +134,64 @@ export class AppComponent implements OnInit {
       }
     });
 
-    this.navigationService.currentNodes.subscribe(currentNodes => this.currentNodes = currentNodes);
+    this.navigationService.currentNodes.subscribe(currentNodes => {
+      this.currentNodes = currentNodes;
 
-    // Compute the version picker list from the current version and the versions in the navigation map
-    combineLatest(
-      this.navigationService.versionInfo,
-      this.navigationService.navigationViews.map(views => views['docVersions']))
-      .subscribe(([versionInfo, versions]) => {
-        // TODO(pbd): consider whether we can lookup the stable and next versions from the internet
-        const computedVersions = [
-          { title: 'next', url: 'https://next.angular.io' },
-          { title: 'stable', url: 'https://angular.io' },
-        ];
-        if (this.deployment.mode === 'archive') {
-          computedVersions.push({ title: `v${versionInfo.major}`, url: null });
-        }
-        this.docVersions = [...computedVersions, ...versions];
-
-        // Find the current version - eithers title matches the current deployment mode
-        // or its title matches the major version of the current version info
-        this.currentDocVersion = this.docVersions.find(version =>
-          version.title === this.deployment.mode || version.title === `v${versionInfo.major}`);
-        this.currentDocVersion.title += ` (v${versionInfo.raw})`;
-      });
-
-    this.navigationService.navigationViews.subscribe(views => {
-      this.footerNodes  = views['Footer']  || [];
-      this.sideNavNodes = views['SideNav'] || [];
-      this.topMenuNodes = views['TopBar']  || [];
-      this.topMenuNarrowNodes = views['TopBarNarrow'] || this.topMenuNodes;
+      // Redirect to docs if we are in archive mode and are not hitting a docs page
+      // (i.e. we have arrived at a marketing page)
+      if (this.deployment.mode === 'archive' && !currentNodes[sideNavView]) {
+        this.locationService.replace('docs');
+      }
     });
 
-    this.navigationService.versionInfo.subscribe( vi => this.versionInfo = vi );
+    // Compute the version picker list from the current version and the versions in the navigation map
+    combineLatest([
+      this.navigationService.versionInfo,
+      this.navigationService.navigationViews.pipe(map(views => views.docVersions)),
+    ]).subscribe(([versionInfo, versions]) => {
+      // TODO(pbd): consider whether we can lookup the stable and next versions from the internet
+      const computedVersions: NavigationNode[] = [
+        { title: 'next', url: 'https://next.angular.io/' },
+        { title: 'rc', url: 'https://rc.angular.io/' },
+        { title: 'stable', url: 'https://angular.io/' },
+      ];
+      if (this.deployment.mode === 'archive') {
+        computedVersions.push({ title: `v${versionInfo.major}` });
+      }
+      this.docVersions = [...computedVersions, ...versions];
 
-    const hasNonEmptyToc = this.tocService.tocList.map(tocList => tocList.length > 0);
-    combineLatest(hasNonEmptyToc, this.showFloatingToc)
+      // Find the current version - eithers title matches the current deployment mode
+      // or its title matches the major version of the current version info
+      this.currentDocVersion = this.docVersions.find(version =>
+        version.title === this.deployment.mode || version.title === `v${versionInfo.major}`) as NavigationNode;
+      this.currentDocVersion.title += ` (v${versionInfo.raw})`;
+    });
+
+    this.navigationService.navigationViews.subscribe(views => {
+      this.footerNodes = views.Footer || [];
+      this.sideNavNodes = views.SideNav || [];
+      this.topMenuNodes = views.TopBar || [];
+      this.topMenuNarrowNodes = views.TopBarNarrow || this.topMenuNodes;
+    });
+
+    this.navigationService.versionInfo.subscribe(vi => this.versionInfo = vi);
+
+    const hasNonEmptyToc = this.tocService.tocList.pipe(map(tocList => tocList.length > 0));
+    combineLatest([hasNonEmptyToc, this.showFloatingToc])
         .subscribe(([hasToc, showFloatingToc]) => this.hasFloatingToc = hasToc && showFloatingToc);
-  }
 
-  // Scroll to the anchor in the hash fragment or top of doc.
-  autoScroll() {
-    this.scrollService.scroll();
+    // Generally, we want to delay updating the shell (e.g. host classes, sidenav state) for the new
+    // document, until after the leaving document has been removed (to avoid having the styles for
+    // the new document applied prematurely).
+    // For the first document, though, (when we know there is no previous document), we want to
+    // ensure the styles are applied as soon as possible to avoid flicker.
+    combineLatest([
+      this.documentService.currentDocument,  // ...needed to determine host classes
+      this.navigationService.currentNodes,   // ...needed to determine `sidenav` state
+    ]).pipe(first())
+      .subscribe(() => this.updateShell());
+
+    this.locationService.currentUrl.subscribe(url => this.currentUrl = url);
   }
 
   onDocReady() {
@@ -194,47 +206,57 @@ export class AppComponent implements OnInit {
   }
 
   onDocRemoved() {
-    // The previous document has been removed.
-    // Scroll to top to restore a clean visual state for the new document.
-    this.scrollService.scrollToTop();
+    this.scrollService.removeStoredScrollInfo();
   }
 
   onDocInserted() {
-    // TODO: Find a better way to avoid `ExpressionChangedAfterItHasBeenChecked` error.
-    setTimeout(() => {
-      // Update the SideNav state (if necessary).
-      this.updateSideNav();
+    // Update the shell (host classes, sidenav state) to match the new document.
+    // This may be called as a result of actions initiated by view updates.
+    // In order to avoid errors (e.g. `ExpressionChangedAfterItHasBeenChecked`), updating the view
+    // (e.g. sidenav, host classes) needs to happen asynchronously.
+    setTimeout(() => this.updateShell());
 
-      // Update the host classes to match the new document.
-      this.updateHostClassesForDoc(this.currentDocument);
-    });
-
-    // Scroll 500ms after the new document has been inserted into the doc-viewer.
-    // The delay is to allow time for async layout to complete.
-    setTimeout(() => this.autoScroll(), 500);
+    // Scroll the good position depending on the context
+    this.scrollService.scrollAfterRender(500);
   }
 
   onDocRendered() {
-    this.isStarting = false;
+    if (this.isStarting) {
+      // In order to ensure that the initial sidenav-content left margin
+      // adjustment happens without animation, we need to ensure that
+      // `isStarting` remains `true` until the margin change is triggered.
+      // (Apparently, this happens with a slight delay.)
+      setTimeout(() => this.isStarting = false, 100);
+    }
+
     this.isTransitioning = false;
   }
 
   onDocVersionChange(versionIndex: number) {
     const version = this.docVersions[versionIndex];
     if (version.url) {
-      this.locationService.go(version.url);
+      const versionUrl = version.url  + (!version.url.endsWith('/') ? '/' : '');
+      this.locationService.go(`${versionUrl}${this.currentUrl}`);
     }
   }
 
   @HostListener('window:resize', ['$event.target.innerWidth'])
-  onResize(width) {
-    this.isSideBySide = width > this.sideBySideWidth;
-    this.showFloatingToc.next(width > this.showFloatingTocWidth);
+  onResize(width: number) {
+    this.showTopMenu = width >= showTopMenuWidth;
+    this.dockSideNav = width >= dockSideNavWidth;
+    this.showFloatingToc.next(width > showFloatingTocWidth);
+
+    if (this.showTopMenu && !this.isSideNavDoc) {
+      // If this is a non-sidenav doc and the screen is wide enough so that we can display menu
+      // items in the top-bar, ensure the sidenav is closed.
+      // (This condition can only be met when the resize event changes the value of `showTopMenu`
+      //  from `false` to `true` while on a non-sidenav doc.)
+      this.sidenav.toggle(false);
+    }
   }
 
   @HostListener('click', ['$event.target', '$event.button', '$event.ctrlKey', '$event.metaKey', '$event.altKey'])
   onClick(eventTarget: HTMLElement, button: number, ctrlKey: boolean, metaKey: boolean, altKey: boolean): boolean {
-
     // Hide the search results if we clicked outside both the "search box" and the "search results"
     if (!this.searchElements.some(element => element.nativeElement.contains(eventTarget))) {
       this.hideSearchResults();
@@ -247,7 +269,7 @@ export class AppComponent implements OnInit {
     }
 
     // Deal with anchor clicks; climb DOM tree until anchor found (or null)
-    let target = eventTarget;
+    let target: HTMLElement | null = eventTarget;
     while (target && !(target instanceof HTMLAnchorElement)) {
       target = target.parentElement;
     }
@@ -257,10 +279,6 @@ export class AppComponent implements OnInit {
 
     // Allow the click to pass through
     return true;
-  }
-
-  sideNavToggle(value?: boolean) {
-    this.sidenav.toggle(value);
   }
 
   setPageId(id: string) {
@@ -273,19 +291,42 @@ export class AppComponent implements OnInit {
     this.folderId = (id === 'index') ? 'home' : id.split('/', 1)[0];
   }
 
+  notificationDismissed() {
+    this.notificationAnimating = true;
+    // this should be kept in sync with the animation durations in:
+    // - aio/src/styles/2-modules/_notification.scss
+    // - aio/src/app/layout/notification/notification.component.ts
+    setTimeout(() => this.notificationAnimating = false, 250);
+    this.updateHostClasses();
+  }
+
   updateHostClasses() {
     const mode = `mode-${this.deployment.mode}`;
     const sideNavOpen = `sidenav-${this.sidenav.opened ? 'open' : 'closed'}`;
     const pageClass = `page-${this.pageId}`;
     const folderClass = `folder-${this.folderId}`;
-    const viewClasses = Object.keys(this.currentNodes || {}).map(view => `view-${view}`).join(' ');
+    const viewClasses = Object.keys(this.currentNodes).map(view => `view-${view}`).join(' ');
+    const notificationClass = `aio-notification-${this.notification.showNotification}`;
+    const notificationAnimatingClass = this.notificationAnimating ? 'aio-notification-animating' : '';
 
-    this.hostClasses = `${mode} ${sideNavOpen} ${pageClass} ${folderClass} ${viewClasses}`;
+    this.hostClasses = [
+      mode,
+      sideNavOpen,
+      pageClass,
+      folderClass,
+      viewClasses,
+      notificationClass,
+      notificationAnimatingClass
+    ].join(' ');
   }
 
-  updateHostClassesForDoc(doc: DocumentContents) {
-    this.setPageId(doc.id);
-    this.setFolderId(doc.id);
+  updateShell() {
+    // Update the SideNav state (if necessary).
+    this.updateSideNav();
+
+    // Update the host classes.
+    this.setPageId(this.currentDocument.id);
+    this.setFolderId(this.currentDocument.id);
     this.updateHostClasses();
   }
 
@@ -301,19 +342,24 @@ export class AppComponent implements OnInit {
     }
 
     // May be open or closed when wide; always closed when narrow.
-    this.sideNavToggle(this.isSideBySide && openSideNav);
+    this.sidenav.toggle(this.dockSideNav && openSideNav);
   }
 
   // Dynamically change height of table of contents container
   @HostListener('window:scroll')
   onScroll() {
     if (!this.tocMaxHeightOffset) {
-      // Must wait until now for mat-toolbar to be measurable.
+      // Must wait until `mat-toolbar` is measurable.
       const el = this.hostElement.nativeElement as Element;
-      this.tocMaxHeightOffset =
-          el.querySelector('footer').clientHeight +
-          el.querySelector('.app-toolbar').clientHeight +
-          24; //  fudge margin
+      const headerEl = el.querySelector('.app-toolbar');
+      const footerEl = el.querySelector('footer');
+
+      if (headerEl && footerEl) {
+        this.tocMaxHeightOffset =
+            headerEl.clientHeight +
+            footerEl.clientHeight +
+            24; //  fudge margin
+      }
     }
 
     this.tocMaxHeight = (document.body.scrollHeight - window.pageYOffset - this.tocMaxHeightOffset).toFixed(2);
@@ -343,6 +389,10 @@ export class AppComponent implements OnInit {
 
   hideSearchResults() {
     this.showSearchResults = false;
+    const oldSearch = this.locationService.search();
+    if (oldSearch.search !== undefined) {
+      this.locationService.setSearch('', { ...oldSearch, search: undefined });
+    }
   }
 
   focusSearchBox() {
@@ -351,7 +401,7 @@ export class AppComponent implements OnInit {
     }
   }
 
-  doSearch(query) {
+  doSearch(query: string) {
     this.searchResults = this.searchService.search(query);
     this.showSearchResults = !!query;
   }
@@ -362,7 +412,7 @@ export class AppComponent implements OnInit {
     if (key === '/' || keyCode === 191) {
       this.focusSearchBox();
     }
-    if (key === 'Escape' || keyCode === 27 ) {
+    if (key === 'Escape' || keyCode === 27) {
       // escape key
       if (this.showSearchResults) {
         this.hideSearchResults();

@@ -1,12 +1,12 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {stringify} from '../util';
+import {stringify} from '../util/stringify';
 import {resolveForwardRef} from './forward_ref';
 
 
@@ -24,7 +24,9 @@ import {resolveForwardRef} from './forward_ref';
  * `Key` should not be created directly. {@link ReflectiveInjector} creates keys automatically when
  * resolving
  * providers.
+ *
  * @deprecated No replacement
+ * @publicApi
  */
 export class ReflectiveKey {
   public readonly displayName: string;
@@ -48,7 +50,9 @@ export class ReflectiveKey {
   /**
    * @returns the number of keys registered in the system.
    */
-  static get numberOfKeys(): number { return _globalKeyRegistry.numberOfKeys; }
+  static get numberOfKeys(): number {
+    return _globalKeyRegistry.numberOfKeys;
+  }
 }
 
 export class KeyRegistry {
@@ -58,7 +62,7 @@ export class KeyRegistry {
     if (token instanceof ReflectiveKey) return token;
 
     if (this._allKeys.has(token)) {
-      return this._allKeys.get(token) !;
+      return this._allKeys.get(token)!;
     }
 
     const newKey = new ReflectiveKey(token, ReflectiveKey.numberOfKeys);
@@ -66,7 +70,9 @@ export class KeyRegistry {
     return newKey;
   }
 
-  get numberOfKeys(): number { return this._allKeys.size; }
+  get numberOfKeys(): number {
+    return this._allKeys.size;
+  }
 }
 
 const _globalKeyRegistry = new KeyRegistry();

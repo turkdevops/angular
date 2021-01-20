@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -15,15 +15,15 @@ import {AnimationStateStyles, AnimationTransitionFactory} from './animation_tran
 
 
 /**
- * @experimental Animation support is experimental.
+ * @publicApi
  */
 export function buildTrigger(name: string, ast: TriggerAst): AnimationTrigger {
   return new AnimationTrigger(name, ast);
 }
 
 /**
-* @experimental Animation support is experimental.
-*/
+ * @publicApi
+ */
 export class AnimationTrigger {
   public transitionFactories: AnimationTransitionFactory[] = [];
   public fallbackTransition: AnimationTransitionFactory;
@@ -45,10 +45,14 @@ export class AnimationTrigger {
     this.fallbackTransition = createFallbackTransition(name, this.states);
   }
 
-  get containsQueries() { return this.ast.queryCount > 0; }
+  get containsQueries() {
+    return this.ast.queryCount > 0;
+  }
 
-  matchTransition(currentState: any, nextState: any): AnimationTransitionFactory|null {
-    const entry = this.transitionFactories.find(f => f.match(currentState, nextState));
+  matchTransition(currentState: any, nextState: any, element: any, params: {[key: string]: any}):
+      AnimationTransitionFactory|null {
+    const entry =
+        this.transitionFactories.find(f => f.match(currentState, nextState, element, params));
     return entry || null;
   }
 

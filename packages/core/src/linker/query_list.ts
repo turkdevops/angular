@@ -1,16 +1,20 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {Observable} from 'rxjs/Observable';
+import {Observable} from 'rxjs';
 
 import {EventEmitter} from '../event_emitter';
-import {getSymbolIterator} from '../util';
+import {arrayEquals, flatten} from '../util/array_utils';
+import {getSymbolIterator} from '../util/symbol';
 
+function symbolIterator<T>(this: QueryList<T>): Iterator<T> {
+  return ((this as any as {_results: Array<T>})._results as any)[getSymbolIterator()]();
+}
 
 /**
  * An unmodifiable list of items that Angular keeps up to date when the state
@@ -27,29 +31,64 @@ import {getSymbolIterator} from '../util';
  *
  * NOTE: In the future this class will implement an `Observable` interface.
  *
- * ### Example ([live demo](http://plnkr.co/edit/RX8sJnQYl9FWuSCWme5z?p=preview))
+ * @usageNotes
+ * ### Example
  * ```typescript
  * @Component({...})
  * class Container {
  *   @ViewChildren(Item) items:QueryList<Item>;
  * }
  * ```
- * @stable
+ *
+ * @publicApi
  */
-export class QueryList<T>/* implements Iterable<T> */ {
+export class QueryList<T> implements Iterable<T> {
   public readonly dirty = true;
   private _results: Array<T> = [];
-  public readonly changes: Observable<any> = new EventEmitter();
+  private _changesDetected: boolean = false;
+  private _changes: EventEmitter<QueryList<T>>|null = null;
 
-  readonly length: number;
-  readonly first: T;
-  readonly last: T;
+  readonly length: number = 0;
+  readonly first: T = undefined!;
+  readonly last: T = undefined!;
+
+  /**
+   * Returns `Observable` of `QueryList` notifying the subscriber of changes.
+   */
+  get changes(): Observable<any> {
+    return this._changes || (this._changes = new EventEmitter());
+  }
+
+  /**
+   * @param emitDistinctChangesOnly Whether `QueryList.changes` should fire only when actual change
+   *     has occurred. Or if it should fire when query is recomputed. (recomputing could resolve in
+   *     the same result) This is set to `false` for backwards compatibility but will be changed to
+   *     true in v12.
+   */
+  constructor(private _emitDistinctChangesOnly: boolean = false) {
+    // This function should be declared on the prototype, but doing so there will cause the class
+    // declaration to have side-effects and become not tree-shakable. For this reason we do it in
+    // the constructor.
+    // [getSymbolIterator()](): Iterator<T> { ... }
+    const symbol = getSymbolIterator();
+    const proto = QueryList.prototype as any;
+    if (!proto[symbol]) proto[symbol] = symbolIterator;
+  }
+
+  /**
+   * Returns the QueryList entry at `index`.
+   */
+  get(index: number): T|undefined {
+    return this._results[index];
+  }
 
   /**
    * See
    * [Array.map](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/map)
    */
-  map<U>(fn: (item: T, index: number, array: T[]) => U): U[] { return this._results.map(fn); }
+  map<U>(fn: (item: T, index: number, array: T[]) => U): U[] {
+    return this._results.map(fn);
+  }
 
   /**
    * See
@@ -79,7 +118,9 @@ export class QueryList<T>/* implements Iterable<T> */ {
    * See
    * [Array.forEach](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/forEach)
    */
-  forEach(fn: (item: T, index: number, array: T[]) => void): void { this._results.forEach(fn); }
+  forEach(fn: (item: T, index: number, array: T[]) => void): void {
+    this._results.forEach(fn);
+  }
 
   /**
    * See
@@ -89,35 +130,77 @@ export class QueryList<T>/* implements Iterable<T> */ {
     return this._results.some(fn);
   }
 
-  toArray(): T[] { return this._results.slice(); }
-
-  [getSymbolIterator()](): Iterator<T> { return (this._results as any)[getSymbolIterator()](); }
-
-  toString(): string { return this._results.toString(); }
-
-  reset(res: Array<T|any[]>): void {
-    this._results = flatten(res);
-    (this as{dirty: boolean}).dirty = false;
-    (this as{length: number}).length = this._results.length;
-    (this as{last: T}).last = this._results[this.length - 1];
-    (this as{first: T}).first = this._results[0];
+  /**
+   * Returns a copy of the internal results list as an Array.
+   */
+  toArray(): T[] {
+    return this._results.slice();
   }
 
-  notifyOnChanges(): void { (this.changes as EventEmitter<any>).emit(this); }
+  toString(): string {
+    return this._results.toString();
+  }
+
+  /**
+   * Updates the stored data of the query list, and resets the `dirty` flag to `false`, so that
+   * on change detection, it will not notify of changes to the queries, unless a new change
+   * occurs.
+   *
+   * @param resultsTree The query results to store
+   * @param identityAccessor Optional function for extracting stable object identity from a value
+   *    in the array. This function is executed for each element of the query result list while
+   *    comparing current query list with the new one (provided as a first argument of the `reset`
+   *    function) to detect if the lists are different. If the function is not provided, elements
+   *    are compared as is (without any pre-processing).
+   */
+  reset(resultsTree: Array<T|any[]>, identityAccessor?: (value: T) => unknown): void {
+    // Cast to `QueryListInternal` so that we can mutate fields which are readonly for the usage of
+    // QueryList (but not for QueryList itself.)
+    const self = this as QueryListInternal<T>;
+    (self as {dirty: boolean}).dirty = false;
+    const newResultFlat = flatten(resultsTree);
+    if (this._changesDetected = !arrayEquals(self._results, newResultFlat, identityAccessor)) {
+      self._results = newResultFlat;
+      self.length = newResultFlat.length;
+      self.last = newResultFlat[this.length - 1];
+      self.first = newResultFlat[0];
+    }
+  }
+
+  /**
+   * Triggers a change event by emitting on the `changes` {@link EventEmitter}.
+   */
+  notifyOnChanges(): void {
+    if (this._changes && (this._changesDetected || !this._emitDistinctChangesOnly))
+      this._changes.emit(this);
+  }
 
   /** internal */
-  setDirty() { (this as{dirty: boolean}).dirty = true; }
+  setDirty() {
+    (this as {dirty: boolean}).dirty = true;
+  }
 
   /** internal */
   destroy(): void {
     (this.changes as EventEmitter<any>).complete();
     (this.changes as EventEmitter<any>).unsubscribe();
   }
+
+  // The implementation of `Symbol.iterator` should be declared here, but this would cause
+  // tree-shaking issues with `QueryList. So instead, it's added in the constructor (see comments
+  // there) and this declaration is left here to ensure that TypeScript considers QueryList to
+  // implement the Iterable interface. This is required for template type-checking of NgFor loops
+  // over QueryLists to work correctly, since QueryList must be assignable to NgIterable.
+  [Symbol.iterator]!: () => Iterator<T>;
 }
 
-function flatten<T>(list: Array<T|T[]>): T[] {
-  return list.reduce((flat: any[], item: T | T[]): T[] => {
-    const flatItem = Array.isArray(item) ? flatten(item) : item;
-    return (<T[]>flat).concat(flatItem);
-  }, []);
+/**
+ * Internal set of APIs used by the framework. (not to be made public)
+ */
+interface QueryListInternal<T> extends QueryList<T> {
+  reset(a: any[]): void;
+  notifyOnChanges(): void;
+  length: number;
+  last: T;
+  first: T;
 }

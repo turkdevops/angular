@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -9,7 +9,7 @@
 import {AstPath} from '../ast_path';
 import {CompileDirectiveSummary, CompileProviderMetadata, CompileTokenMetadata} from '../compile_metadata';
 import {SecurityContext} from '../core';
-import {AST} from '../expression_parser/ast';
+import {ASTWithSource, BindingType, BoundElementProperty, ParsedEvent, ParsedEventType, ParsedVariable} from '../expression_parser/ast';
 import {LifecycleHooks} from '../lifecycle_reflector';
 import {ParseSourceSpan} from '../parse_util';
 
@@ -36,7 +36,9 @@ export interface TemplateAst {
 export class TextAst implements TemplateAst {
   constructor(
       public value: string, public ngContentIndex: number, public sourceSpan: ParseSourceSpan) {}
-  visit(visitor: TemplateAstVisitor, context: any): any { return visitor.visitText(this, context); }
+  visit(visitor: TemplateAstVisitor, context: any): any {
+    return visitor.visitText(this, context);
+  }
 }
 
 /**
@@ -44,7 +46,8 @@ export class TextAst implements TemplateAst {
  */
 export class BoundTextAst implements TemplateAst {
   constructor(
-      public value: AST, public ngContentIndex: number, public sourceSpan: ParseSourceSpan) {}
+      public value: ASTWithSource, public ngContentIndex: number,
+      public sourceSpan: ParseSourceSpan) {}
   visit(visitor: TemplateAstVisitor, context: any): any {
     return visitor.visitBoundText(this, context);
   }
@@ -55,22 +58,52 @@ export class BoundTextAst implements TemplateAst {
  */
 export class AttrAst implements TemplateAst {
   constructor(public name: string, public value: string, public sourceSpan: ParseSourceSpan) {}
-  visit(visitor: TemplateAstVisitor, context: any): any { return visitor.visitAttr(this, context); }
+  visit(visitor: TemplateAstVisitor, context: any): any {
+    return visitor.visitAttr(this, context);
+  }
 }
+
+export const enum PropertyBindingType {
+  // A normal binding to a property (e.g. `[property]="expression"`).
+  Property,
+  // A binding to an element attribute (e.g. `[attr.name]="expression"`).
+  Attribute,
+  // A binding to a CSS class (e.g. `[class.name]="condition"`).
+  Class,
+  // A binding to a style rule (e.g. `[style.rule]="expression"`).
+  Style,
+  // A binding to an animation reference (e.g. `[animate.key]="expression"`).
+  Animation,
+}
+
+const BoundPropertyMapping = {
+  [BindingType.Animation]: PropertyBindingType.Animation,
+  [BindingType.Attribute]: PropertyBindingType.Attribute,
+  [BindingType.Class]: PropertyBindingType.Class,
+  [BindingType.Property]: PropertyBindingType.Property,
+  [BindingType.Style]: PropertyBindingType.Style,
+};
 
 /**
  * A binding for an element property (e.g. `[property]="expression"`) or an animation trigger (e.g.
  * `[@trigger]="stateExp"`)
  */
 export class BoundElementPropertyAst implements TemplateAst {
-  public readonly isAnimation: boolean;
+  readonly isAnimation: boolean;
 
   constructor(
       public name: string, public type: PropertyBindingType,
-      public securityContext: SecurityContext, public value: AST, public unit: string|null,
-      public sourceSpan: ParseSourceSpan) {
+      public securityContext: SecurityContext, public value: ASTWithSource,
+      public unit: string|null, public sourceSpan: ParseSourceSpan) {
     this.isAnimation = this.type === PropertyBindingType.Animation;
   }
+
+  static fromBoundProperty(prop: BoundElementProperty) {
+    const type = BoundPropertyMapping[prop.type];
+    return new BoundElementPropertyAst(
+        prop.name, type, prop.securityContext, prop.value, prop.unit, prop.sourceSpan);
+  }
+
   visit(visitor: TemplateAstVisitor, context: any): any {
     return visitor.visitElementProperty(this, context);
   }
@@ -81,25 +114,36 @@ export class BoundElementPropertyAst implements TemplateAst {
  * `(@trigger.phase)="callback($event)"`).
  */
 export class BoundEventAst implements TemplateAst {
-  static calcFullName(name: string, target: string|null, phase: string|null): string {
-    if (target) {
-      return `${target}:${name}`;
-    } else if (phase) {
-      return `@${name}.${phase}`;
-    } else {
-      return name;
-    }
-  }
-
-  public readonly fullName: string;
-  public readonly isAnimation: boolean;
+  readonly fullName: string;
+  readonly isAnimation: boolean;
 
   constructor(
       public name: string, public target: string|null, public phase: string|null,
-      public handler: AST, public sourceSpan: ParseSourceSpan) {
+      public handler: ASTWithSource, public sourceSpan: ParseSourceSpan,
+      public handlerSpan: ParseSourceSpan) {
     this.fullName = BoundEventAst.calcFullName(this.name, this.target, this.phase);
     this.isAnimation = !!this.phase;
   }
+
+  static calcFullName(name: string, target: string|null, phase: string|null): string {
+    if (target) {
+      return `${target}:${name}`;
+    }
+    if (phase) {
+      return `@${name}.${phase}`;
+    }
+
+    return name;
+  }
+
+  static fromParsedEvent(event: ParsedEvent) {
+    const target: string|null = event.type === ParsedEventType.Regular ? event.targetOrPhase : null;
+    const phase: string|null =
+        event.type === ParsedEventType.Animation ? event.targetOrPhase : null;
+    return new BoundEventAst(
+        event.name, target, phase, event.handler, event.sourceSpan, event.handlerSpan);
+  }
+
   visit(visitor: TemplateAstVisitor, context: any): any {
     return visitor.visitEvent(this, context);
   }
@@ -110,8 +154,8 @@ export class BoundEventAst implements TemplateAst {
  */
 export class ReferenceAst implements TemplateAst {
   constructor(
-      public name: string, public value: CompileTokenMetadata, public sourceSpan: ParseSourceSpan) {
-  }
+      public name: string, public value: CompileTokenMetadata, public originalValue: string,
+      public sourceSpan: ParseSourceSpan) {}
   visit(visitor: TemplateAstVisitor, context: any): any {
     return visitor.visitReference(this, context);
   }
@@ -121,7 +165,14 @@ export class ReferenceAst implements TemplateAst {
  * A variable declaration on a <ng-template> (e.g. `var-someName="someLocalName"`).
  */
 export class VariableAst implements TemplateAst {
-  constructor(public name: string, public value: string, public sourceSpan: ParseSourceSpan) {}
+  constructor(
+      public readonly name: string, public readonly value: string,
+      public readonly sourceSpan: ParseSourceSpan, public readonly valueSpan?: ParseSourceSpan) {}
+
+  static fromParsedVariable(v: ParsedVariable) {
+    return new VariableAst(v.name, v.value, v.sourceSpan, v.valueSpan);
+  }
+
   visit(visitor: TemplateAstVisitor, context: any): any {
     return visitor.visitVariable(this, context);
   }
@@ -165,7 +216,7 @@ export class EmbeddedTemplateAst implements TemplateAst {
  */
 export class BoundDirectivePropertyAst implements TemplateAst {
   constructor(
-      public directiveName: string, public templateName: string, public value: AST,
+      public directiveName: string, public templateName: string, public value: ASTWithSource,
       public sourceSpan: ParseSourceSpan) {}
   visit(visitor: TemplateAstVisitor, context: any): any {
     return visitor.visitDirectiveProperty(this, context);
@@ -192,7 +243,8 @@ export class ProviderAst implements TemplateAst {
   constructor(
       public token: CompileTokenMetadata, public multiProvider: boolean, public eager: boolean,
       public providers: CompileProviderMetadata[], public providerType: ProviderAstType,
-      public lifecycleHooks: LifecycleHooks[], public sourceSpan: ParseSourceSpan) {}
+      public lifecycleHooks: LifecycleHooks[], public sourceSpan: ParseSourceSpan,
+      readonly isModule: boolean) {}
 
   visit(visitor: TemplateAstVisitor, context: any): any {
     // No visit method in the visitor for now...
@@ -217,37 +269,6 @@ export class NgContentAst implements TemplateAst {
   visit(visitor: TemplateAstVisitor, context: any): any {
     return visitor.visitNgContent(this, context);
   }
-}
-
-/**
- * Enumeration of types of property bindings.
- */
-export enum PropertyBindingType {
-
-  /**
-   * A normal binding to a property (e.g. `[property]="expression"`).
-   */
-  Property,
-
-  /**
-   * A binding to an element attribute (e.g. `[attr.name]="expression"`).
-   */
-  Attribute,
-
-  /**
-   * A binding to a CSS class (e.g. `[class.name]="condition"`).
-   */
-  Class,
-
-  /**
-   * A binding to a style rule (e.g. `[style.rule]="expression"`).
-   */
-  Style,
-
-  /**
-   * A binding to an animation reference (e.g. `[animate.key]="expression"`).
-   */
-  Animation
 }
 
 export interface QueryMatch {
@@ -302,7 +323,9 @@ export class NullTemplateVisitor implements TemplateAstVisitor {
  * in an template ast recursively.
  */
 export class RecursiveTemplateAstVisitor extends NullTemplateVisitor implements TemplateAstVisitor {
-  constructor() { super(); }
+  constructor() {
+    super();
+  }
 
   // Nodes with children
   visitEmbeddedTemplate(ast: EmbeddedTemplateAst, context: any): any {
@@ -336,16 +359,16 @@ export class RecursiveTemplateAstVisitor extends NullTemplateVisitor implements 
     });
   }
 
-  protected visitChildren<T extends TemplateAst>(
+  protected visitChildren(
       context: any,
       cb: (visit: (<V extends TemplateAst>(children: V[]|undefined) => void)) => void) {
     let results: any[][] = [];
     let t = this;
-    function visit<T extends TemplateAst>(children: T[] | undefined) {
+    function visit<T extends TemplateAst>(children: T[]|undefined) {
       if (children && children.length) results.push(templateVisitAll(t, children, context));
     }
     cb(visit);
-    return [].concat.apply([], results);
+    return Array.prototype.concat.apply([], results);
   }
 }
 
@@ -356,7 +379,7 @@ export function templateVisitAll(
     visitor: TemplateAstVisitor, asts: TemplateAst[], context: any = null): any[] {
   const result: any[] = [];
   const visit = visitor.visit ?
-      (ast: TemplateAst) => visitor.visit !(ast, context) || ast.visit(visitor, context) :
+      (ast: TemplateAst) => visitor.visit!(ast, context) || ast.visit(visitor, context) :
       (ast: TemplateAst) => ast.visit(visitor, context);
   asts.forEach(ast => {
     const astResult = visit(ast);

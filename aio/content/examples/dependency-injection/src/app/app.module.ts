@@ -1,11 +1,12 @@
 // #docplaster
 import { NgModule } from '@angular/core';
-import { BrowserModule }  from '@angular/platform-browser';
+import { BrowserModule } from '@angular/platform-browser';
 
-import { APP_CONFIG, HERO_DI_CONFIG }    from './app.config';
+import { APP_CONFIG, HERO_DI_CONFIG } from './app.config';
 import { AppComponent } from './app.component';
 import { CarComponent } from './car/car.component';
 import { HeroesComponent } from './heroes/heroes.component';
+import { HeroesTspComponent } from './heroes/heroes-tsp.component';
 import { HeroListComponent } from './heroes/hero-list.component';
 import { InjectorComponent } from './injector.component';
 import { Logger } from './logger.service';
@@ -25,6 +26,7 @@ import { ProvidersModule } from './providers.module';
     CarComponent,
     HeroesComponent,
     // #enddocregion ngmodule
+    HeroesTspComponent,
     HeroListComponent,
     InjectorComponent,
     TestComponent

@@ -1,13 +1,13 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {HttpErrorResponse, HttpEvent, HttpEventType, HttpHeaders, HttpRequest, HttpResponse} from '@angular/common/http';
-import {Observer} from 'rxjs/Observer';
+import {HttpErrorResponse, HttpEvent, HttpHeaders, HttpRequest, HttpResponse} from '@angular/common/http';
+import {Observer} from 'rxjs';
 
 /**
  * A mock requests that was received and is ready to be answered.
@@ -15,13 +15,15 @@ import {Observer} from 'rxjs/Observer';
  * This interface allows access to the underlying `HttpRequest`, and allows
  * responding with `HttpEvent`s or `HttpErrorResponse`s.
  *
- * @stable
+ * @publicApi
  */
 export class TestRequest {
   /**
    * Whether the request was cancelled after it was sent.
    */
-  get cancelled(): boolean { return this._cancelled; }
+  get cancelled(): boolean {
+    return this._cancelled;
+  }
 
   /**
    * @internal set by `HttpClientTestingBackend`
@@ -33,14 +35,19 @@ export class TestRequest {
   /**
    * Resolve the request by returning a body plus additional HTTP information (such as response
    * headers) if provided.
+   * If the request specifies an expected body type, the body is converted into the requested type.
+   * Otherwise, the body is converted to `JSON` by default.
    *
    * Both successful and unsuccessful responses can be delivered via `flush()`.
    */
-  flush(body: ArrayBuffer|Blob|string|number|Object|(string|number|Object|null)[]|null, opts: {
-    headers?: HttpHeaders | {[name: string]: string | string[]},
-    status?: number,
-    statusText?: string,
-  } = {}): void {
+  flush(
+      body: ArrayBuffer|Blob|boolean|string|number|Object|(boolean|string|number|Object|null)[]|
+      null,
+      opts: {
+        headers?: HttpHeaders|{[name: string]: string | string[]},
+        status?: number,
+        statusText?: string,
+      } = {}): void {
     if (this.cancelled) {
       throw new Error(`Cannot flush a cancelled request.`);
     }
@@ -73,7 +80,7 @@ export class TestRequest {
    * Resolve the request by returning an `ErrorEvent` (e.g. simulating a network failure).
    */
   error(error: ErrorEvent, opts: {
-    headers?: HttpHeaders | {[name: string]: string | string[]},
+    headers?: HttpHeaders|{[name: string]: string | string[]},
     status?: number,
     statusText?: string,
   } = {}): void {
@@ -110,9 +117,8 @@ export class TestRequest {
 /**
  * Helper function to convert a response body to an ArrayBuffer.
  */
-function _toArrayBufferBody(
-    body: ArrayBuffer | Blob | string | number | Object |
-    (string | number | Object | null)[]): ArrayBuffer {
+function _toArrayBufferBody(body: ArrayBuffer|Blob|string|number|Object|
+                            (string | number | Object | null)[]): ArrayBuffer {
   if (typeof ArrayBuffer === 'undefined') {
     throw new Error('ArrayBuffer responses are not supported on this platform.');
   }
@@ -125,9 +131,8 @@ function _toArrayBufferBody(
 /**
  * Helper function to convert a response body to a Blob.
  */
-function _toBlob(
-    body: ArrayBuffer | Blob | string | number | Object |
-    (string | number | Object | null)[]): Blob {
+function _toBlob(body: ArrayBuffer|Blob|string|number|Object|
+                 (string | number | Object | null)[]): Blob {
   if (typeof Blob === 'undefined') {
     throw new Error('Blob responses are not supported on this platform.');
   }
@@ -144,7 +149,8 @@ function _toBlob(
  * Helper function to convert a response body to JSON data.
  */
 function _toJsonBody(
-    body: ArrayBuffer | Blob | string | number | Object | (string | number | Object | null)[],
+    body: ArrayBuffer|Blob|boolean|string|number|Object|
+    (boolean | string | number | Object | null)[],
     format: string = 'JSON'): Object|string|number|(Object | string | number)[] {
   if (typeof ArrayBuffer !== 'undefined' && body instanceof ArrayBuffer) {
     throw new Error(`Automatic conversion to ${format} is not supported for ArrayBuffers.`);
@@ -153,7 +159,7 @@ function _toJsonBody(
     throw new Error(`Automatic conversion to ${format} is not supported for Blobs.`);
   }
   if (typeof body === 'string' || typeof body === 'number' || typeof body === 'object' ||
-      Array.isArray(body)) {
+      typeof body === 'boolean' || Array.isArray(body)) {
     return body;
   }
   throw new Error(`Automatic conversion to ${format} is not supported for response type.`);
@@ -162,9 +168,8 @@ function _toJsonBody(
 /**
  * Helper function to convert a response body to a string.
  */
-function _toTextBody(
-    body: ArrayBuffer | Blob | string | number | Object |
-    (string | number | Object | null)[]): string {
+function _toTextBody(body: ArrayBuffer|Blob|string|number|Object|
+                     (string | number | Object | null)[]): string {
   if (typeof body === 'string') {
     return body;
   }
@@ -181,29 +186,20 @@ function _toTextBody(
  * Convert a response body to the requested type.
  */
 function _maybeConvertBody(
-    responseType: string, body: ArrayBuffer | Blob | string | number | Object |
-        (string | number | Object | null)[] | null): ArrayBuffer|Blob|string|number|Object|
-    (string | number | Object | null)[]|null {
+    responseType: string,
+    body: ArrayBuffer|Blob|string|number|Object|(string | number | Object | null)[]|
+    null): ArrayBuffer|Blob|string|number|Object|(string | number | Object | null)[]|null {
+  if (body === null) {
+    return null;
+  }
   switch (responseType) {
     case 'arraybuffer':
-      if (body === null) {
-        return null;
-      }
       return _toArrayBufferBody(body);
     case 'blob':
-      if (body === null) {
-        return null;
-      }
       return _toBlob(body);
     case 'json':
-      if (body === null) {
-        return 'null';
-      }
       return _toJsonBody(body);
     case 'text':
-      if (body === null) {
-        return null;
-      }
       return _toTextBody(body);
     default:
       throw new Error(`Unsupported responseType: ${responseType}`);

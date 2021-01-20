@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -28,6 +28,7 @@ export class Identifiers {
   };
   static QueryList: o.ExternalReference = {name: 'QueryList', moduleName: CORE};
   static TemplateRef: o.ExternalReference = {name: 'TemplateRef', moduleName: CORE};
+  static Renderer2: o.ExternalReference = {name: 'Renderer2', moduleName: CORE};
   static CodegenComponentFactoryResolver: o.ExternalReference = {
     name: 'ɵCodegenComponentFactoryResolver',
     moduleName: CORE,
@@ -61,7 +62,12 @@ export class Identifiers {
     moduleName: CORE,
 
   };
+  static inject: o.ExternalReference = {name: 'ɵɵinject', moduleName: CORE};
+  static directiveInject: o.ExternalReference = {name: 'ɵɵdirectiveInject', moduleName: CORE};
+  static INJECTOR: o.ExternalReference = {name: 'INJECTOR', moduleName: CORE};
   static Injector: o.ExternalReference = {name: 'Injector', moduleName: CORE};
+  static ɵɵdefineInjectable: o.ExternalReference = {name: 'ɵɵdefineInjectable', moduleName: CORE};
+  static InjectableDef: o.ExternalReference = {name: 'ɵɵInjectableDef', moduleName: CORE};
   static ViewEncapsulation: o.ExternalReference = {
     name: 'ViewEncapsulation',
     moduleName: CORE,
@@ -86,7 +92,6 @@ export class Identifiers {
   static inlineInterpolate: o.ExternalReference = {
     name: 'ɵinlineInterpolate',
     moduleName: CORE,
-
   };
   static interpolate: o.ExternalReference = {name: 'ɵinterpolate', moduleName: CORE};
   static EMPTY_ARRAY: o.ExternalReference = {name: 'ɵEMPTY_ARRAY', moduleName: CORE};
@@ -119,6 +124,7 @@ export class Identifiers {
     moduleName: CORE,
   };
   static createComponentFactory: o.ExternalReference = {name: 'ɵccf', moduleName: CORE};
+  static setClassMetadata: o.ExternalReference = {name: 'ɵsetClassMetadata', moduleName: CORE};
 }
 
 export function createTokenForReference(reference: any): CompileTokenMetadata {

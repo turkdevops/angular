@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -38,7 +38,9 @@ const MISSING_FROM_CHROME: {[el: string]: string[]} = {
   ':svg:cursor^:svg:': [],
 };
 
-const _G: any = global;
+const _G: any = typeof window != 'undefined' && window || typeof global != 'undefined' && global ||
+    typeof self != 'undefined' && self;
+
 const document: any = typeof _G['document'] == 'object' ? _G['document'] : null;
 
 export function extractSchema(): Map<string, string[]>|null {
@@ -95,7 +97,9 @@ export function extractSchema(): Map<string, string[]>|null {
 
   types.sort();
 
-  types.forEach(type => { extractRecursiveProperties(visited, descMap, (window as any)[type]); });
+  types.forEach(type => {
+    extractRecursiveProperties(visited, descMap, (window as any)[type]);
+  });
 
   // Add elements missed by Chrome auto-detection
   Object.keys(MISSING_FROM_CHROME).forEach(elHierarchy => {
@@ -123,7 +127,7 @@ function assertNoMissingTags(descMap: Map<string, string[]>): void {
 
 function extractRecursiveProperties(
     visited: {[name: string]: boolean}, descMap: Map<string, string[]>, type: Function): string {
-  const name = extractName(type) !;
+  const name = extractName(type)!;
 
   if (visited[name]) {
     return name;
@@ -179,7 +183,7 @@ function extractProperties(
 
   const fullName = name + (superName ? '^' + superName : '');
 
-  const props: string[] = descMap.has(fullName) ? descMap.get(fullName) ! : [];
+  const props: string[] = descMap.has(fullName) ? descMap.get(fullName)! : [];
 
   const prototype = type.prototype;
   const keys = Object.getOwnPropertyNames(prototype);
@@ -204,6 +208,13 @@ function extractProperties(
 
 function extractName(type: Function): string|null {
   let name = type['name'];
+
+  // The polyfill @webcomponents/custom-element/src/native-shim.js overrides the
+  // window.HTMLElement and does not have the name property. Check if this is the
+  // case and if so, set the name manually.
+  if (name === '' && type === HTMLElement) {
+    name = 'HTMLElement';
+  }
 
   switch (name) {
     // see https://www.w3.org/TR/html5/index.html

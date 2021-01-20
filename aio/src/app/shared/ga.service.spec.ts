@@ -1,18 +1,23 @@
-import { ReflectiveInjector } from '@angular/core';
+import { Injector } from '@angular/core';
 
 import { GaService } from 'app/shared/ga.service';
 import { WindowToken } from 'app/shared/window';
 
 describe('GaService', () => {
   let gaService: GaService;
-  let injector: ReflectiveInjector;
+  let injector: Injector;
   let gaSpy: jasmine.Spy;
   let mockWindow: any;
 
   beforeEach(() => {
     gaSpy = jasmine.createSpy('ga');
     mockWindow = { ga: gaSpy };
-    injector = ReflectiveInjector.resolveAndCreate([GaService, { provide: WindowToken, useFactory: () => mockWindow }]);
+    injector = Injector.create({
+      providers: [
+        { provide: GaService, deps: [WindowToken] },
+        { provide: WindowToken, useFactory: () => mockWindow, deps: [] }
+      ]});
+
     gaService = injector.get(GaService);
   });
 
@@ -71,6 +76,13 @@ describe('GaService', () => {
       gaService.sendPage('testUrl');
       expect(gaSpy).toHaveBeenCalledWith('set', 'page', '/testUrl');
       expect(gaSpy).toHaveBeenCalledWith('send', 'pageview');
+    });
+  });
+
+  describe('sendEvent', () => {
+    it('should send "event" with associated data', () => {
+      gaService.sendEvent('some source', 'some campaign', 'a label', 45);
+      expect(gaSpy).toHaveBeenCalledWith('send', 'event', 'some source', 'some campaign', 'a label', 45);
     });
   });
 

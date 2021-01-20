@@ -14,7 +14,7 @@ export class GaService {
   private previousUrl: string;
 
   constructor(@Inject(WindowToken) private window: Window) {
-    this.ga('create', environment['gaId'] , 'auto');
+    this.ga('create', environment.gaId , 'auto');
   }
 
   locationChanged(url: string) {
@@ -29,7 +29,14 @@ export class GaService {
     this.ga('send', 'pageview');
   }
 
-  ga(...args) {
-    this.window['ga'](...args);
+  sendEvent(source: string, action: string, label?: string, value?: number) {
+    this.ga('send', 'event', source, action, label, value);
+  }
+
+  ga(...args: any[]) {
+    const gaFn = (this.window as any).ga;
+    if (gaFn) {
+      gaFn(...args);
+    }
   }
 }

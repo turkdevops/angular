@@ -33,7 +33,7 @@ describe('addSelectorsAsAliases processor', () => {
       { docType: 'directive', name: 'NgModel', aliases: ['NgModel'], directiveOptions: { selector: '\'[ngModel]:not([formControlName]):not([formControl])\'' } },
       { docType: 'component', name: 'MyComponent', aliases: ['MyComponent'], componentOptions: { selector: '\'my-component\'' } },
       { docType: 'decorator', name: 'MyDecorator', aliases: ['MyDecorator'] },
-      { docType: 'module', name: 'myModule', aliases: ['myModule'], id: 'some/myModule' },
+      { docType: 'package', name: 'myPackage', aliases: ['myPackage'], id: 'some/myPackage' },
       { docType: 'var', name: 'myVar', aliases: ['myVar'] },
       { docType: 'let', name: 'myLet', aliases: ['myLet'] },
       { docType: 'const', name: 'myConst', aliases: ['myConst'] },
@@ -53,5 +53,16 @@ describe('addSelectorsAsAliases processor', () => {
     expect(docs[10].aliases).toEqual([docs[10].name]);
     expect(docs[11].aliases).toEqual([docs[11].name]);
     expect(docs[12].aliases).toEqual([docs[12].name]);
+  });
+
+  it('should ignore directives and components that have no selector', () => {
+    const processor = processorFactory();
+    const docs = [
+      { docType: 'directive', name: 'MyDirective', aliases: ['MyDirective'], directiveOptions: { } },
+      { docType: 'component', name: 'MyComponent', aliases: ['MyComponent'], componentOptions: { } },
+    ];
+    processor.$process(docs);
+    expect(docs[0].aliases).toEqual([docs[0].name]);
+    expect(docs[1].aliases).toEqual([docs[1].name]);
   });
 });

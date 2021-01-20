@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -8,6 +8,7 @@
 
 const fs = require('fs');
 const yargs = require('yargs').argv;
+const shelljs = require('shelljs');
 const {I18N_DATA_FOLDER, RELATIVE_I18N_DATA_FOLDER, HEADER} = require('./extract');
 const OUTPUT_NAME = `closure-locale.ts`;
 
@@ -57,11 +58,8 @@ module.exports = (gulp, done) => {
       `${RELATIVE_I18N_DATA_FOLDER}/${OUTPUT_NAME}`, generateAllLocalesFile(GOOG_LOCALES, ALIASES));
 
   console.log(`Formatting ${I18N_DATA_FOLDER}/${OUTPUT_NAME}..."`);
-  const format = require('gulp-clang-format');
-  const clangFormat = require('clang-format');
-  return gulp.src([`${I18N_DATA_FOLDER}/${OUTPUT_NAME}`], {base: '.'})
-      .pipe(format.format('file', clangFormat))
-      .pipe(gulp.dest('.'));
+  shelljs.exec(`yarn clang-format -i ${I18N_DATA_FOLDER}/${OUTPUT_NAME}`, {silent: true});
+  done();
 };
 
 /**
@@ -110,8 +108,14 @@ function generateAllLocalesFile(LOCALES, ALIASES) {
       // find the existing content file
       const path = `${RELATIVE_I18N_DATA_FOLDER}/${l}.ts`;
       if (fs.existsSync(`${RELATIVE_I18N_DATA_FOLDER}/${l}.ts`)) {
+        const localeName = formatLocale(locale);
         existingLocalesData[locale] =
-            fs.readFileSync(path, 'utf8').replace(`${HEADER}\nexport default `, '');
+            fs.readFileSync(path, 'utf8')
+                .replace(`${HEADER}\n`, '')
+                .replace('export default ', `export const locale_${localeName} = `)
+                .replace('function plural', `function plural_${localeName}`)
+                .replace(/,(\n  | )plural/, `, plural_${localeName}`)
+                .replace('const u = undefined;\n\n', '');
       }
     }
 
@@ -120,30 +124,39 @@ function generateAllLocalesFile(LOCALES, ALIASES) {
 
   function generateCases(locale) {
     let str = '';
+    let locales = [];
     const eqLocales = existingLocalesAliases[locale];
     for (let l of eqLocales) {
       str += `case '${l}':\n`;
+      locales.push(`'${l}'`);
     }
+    let localesStr = '[' + locales.join(',') + ']';
 
-    str += `  l = ${formatLocale(locale)};
+    str += `  l = locale_${formatLocale(locale)};
+    locales = ${localesStr};
     break;\n`;
     return str;
   }
 
-  function formatLocale(locale) { return `locale_${locale.replace(/-/g, '_')}`; }
+  function formatLocale(locale) {
+    return locale.replace(/-/g, '_');
+  }
   // clang-format off
   return `${HEADER}
 import {registerLocaleData} from '../src/i18n/locale_data';
 
-${LOCALES.map(locale => `export const ${formatLocale(locale)} = ${existingLocalesData[locale]}`).join('\n')}
+const u = undefined;
+
+${LOCALES.map(locale => `${existingLocalesData[locale]}`).join('\n')}
 
 let l: any;
+let locales: string[] = [];
 
 switch (goog.LOCALE) {
 ${LOCALES.map(locale => generateCases(locale)).join('')}}
 
 if(l) {
-  registerLocaleData(l, goog.LOCALE);
+  locales.forEach(locale => registerLocaleData(l, locale));
 }
 `;
   // clang-format on

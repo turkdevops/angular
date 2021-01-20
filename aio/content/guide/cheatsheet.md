@@ -44,6 +44,9 @@ is available to <code>declarations</code> of this module.</p>
 <td><p>List of dependency injection providers visible both to the contents of this module and to importers of this module.</p>
 </td>
 </tr><tr>
+<td><code><b>entryComponents:</b> [SomeComponent, OtherComponent]</code></td>
+<td><p>List of components not referenced in any reachable template, for example dynamically created from code.</p></td>
+</tr><tr>
 <td><code><b>bootstrap:</b> [MyAppComponent]</code></td>
 <td><p>List of components to bootstrap when this module is bootstrapped.</p>
 </td>
@@ -140,6 +143,11 @@ is available to <code>declarations</code> of this module.</p>
 <td><p>Binds the presence of CSS classes on the element to the truthiness of the associated map values. The right-hand expression should return {class-name: true/false} map.</p>
 </td>
 </tr>
+<tr>
+<td><code>&lt;div <b>[ngStyle]</b>="{'property': 'value'}"&gt;</code><br><code>&lt;div <b>[ngStyle]</b>="dynamicStyles()"&gt;</code></td>
+<td><p>Allows you to assign styles to an HTML element using CSS. You can use CSS directly, as in the first example, or you can call a method from the component.</p>
+</td>
+</tr>
 </tbody></table>
 
 <table class="is-full-width is-fixed-layout">
@@ -177,8 +185,7 @@ is available to <code>declarations</code> of this module.</p>
 </td>
 </tr><tr>
 <td><code><b>@Injectable()</b><br>class MyService() {}</code></td>
-<td><p>Declares that a class has dependencies that should be injected into the constructor when the dependency injector is creating an instance of this class.
-</p>
+<td><p>Declares that a class can be provided and injected by other classes. Without this decorator, the compiler won't generate enough metadata to allow the class to be created properly when it's injected somewhere.</p>
 </td>
 </tr>
 </tbody></table>
@@ -306,11 +313,11 @@ so the <code>@Directive</code> configuration applies to components as well</p>
 </td>
 </tr><tr>
 <td><code><b>ngAfterViewInit()</b> { ... }</code></td>
-<td><p>Called after <code>ngAfterContentInit</code> when the component's view has been initialized. Applies to components only.</p>
+<td><p>Called after <code>ngAfterContentInit</code> when the component's views and child views / the view that a directive is in has been initialized.</p>
 </td>
 </tr><tr>
 <td><code><b>ngAfterViewChecked()</b> { ... }</code></td>
-<td><p>Called after every check of the component's view. Applies to components only.</p>
+<td><p>Called after every check of the component's views and child views / the view that a directive is in.</p>
 </td>
 </tr><tr>
 <td><code><b>ngOnDestroy()</b> { ... }</code></td>
@@ -363,24 +370,24 @@ so the <code>@Directive</code> configuration applies to components as well</p>
 <td><p>The provided classes are added to the element when the <code>routerLink</code> becomes the current active route.</p>
 </td>
 </tr><tr>
-<td><code>class <b>CanActivate</b>Guard implements <b>CanActivate</b> {<br>    canActivate(<br>      route: ActivatedRouteSnapshot,<br>      state: RouterStateSnapshot<br>    ): Observable&lt;boolean&gt;|Promise&lt;boolean&gt;|boolean { ... }<br>}<br><br>{ path: ..., canActivate: [<b>CanActivate</b>Guard] }</code></td>
-<td><p>An interface for defining a class that the router should call first to determine if it should activate this component. Should return a boolean or an Observable/Promise that resolves to a boolean.</p>
+<td><code>class <b>CanActivate</b>Guard implements <b>CanActivate</b> {<br>    canActivate(<br>      route: ActivatedRouteSnapshot,<br>      state: RouterStateSnapshot<br>    ): Observable&lt;boolean|UrlTree&gt;|Promise&lt;boolean|UrlTree&gt;|boolean|UrlTree { ... }<br>}<br><br>{ path: ..., canActivate: [<b>CanActivate</b>Guard] }</code></td>
+<td><p>An interface for defining a class that the router should call first to determine if it should activate this component. Should return a boolean|UrlTree or an Observable/Promise that resolves to a boolean|UrlTree.</p>
 </td>
 </tr><tr>
-<td><code>class <b>CanDeactivate</b>Guard implements <b>CanDeactivate</b>&lt;T&gt; {<br>    canDeactivate(<br>      component: T,<br>      route: ActivatedRouteSnapshot,<br>      state: RouterStateSnapshot<br>    ): Observable&lt;boolean&gt;|Promise&lt;boolean&gt;|boolean { ... }<br>}<br><br>{ path: ..., canDeactivate: [<b>CanDeactivate</b>Guard] }</code></td>
-<td><p>An interface for defining a class that the router should call first to determine if it should deactivate this component after a navigation. Should return a boolean or an Observable/Promise that resolves to a boolean.</p>
+<td><code>class <b>CanDeactivate</b>Guard implements <b>CanDeactivate</b>&lt;T&gt; {<br>    canDeactivate(<br>      component: T,<br>      route: ActivatedRouteSnapshot,<br>      state: RouterStateSnapshot<br>    ): Observable&lt;boolean|UrlTree&gt;|Promise&lt;boolean|UrlTree&gt;|boolean|UrlTree { ... }<br>}<br><br>{ path: ..., canDeactivate: [<b>CanDeactivate</b>Guard] }</code></td>
+<td><p>An interface for defining a class that the router should call first to determine if it should deactivate this component after a navigation. Should return a boolean|UrlTree or an Observable/Promise that resolves to a boolean|UrlTree.</p>
 </td>
 </tr><tr>
-<td><code>class <b>CanActivateChild</b>Guard implements <b>CanActivateChild</b> {<br>    canActivateChild(<br>      route: ActivatedRouteSnapshot,<br>      state: RouterStateSnapshot<br>    ): Observable&lt;boolean&gt;|Promise&lt;boolean&gt;|boolean { ... }<br>}<br><br>{ path: ..., canActivateChild: [CanActivateGuard],<br>    children: ... }</code></td>
-<td><p>An interface for defining a class that the router should call first to determine if it should activate the child route. Should return a boolean or an Observable/Promise that resolves to a boolean.</p>
+<td><code>class <b>CanActivateChild</b>Guard implements <b>CanActivateChild</b> {<br>    canActivateChild(<br>      route: ActivatedRouteSnapshot,<br>      state: RouterStateSnapshot<br>    ): Observable&lt;boolean|UrlTree&gt;|Promise&lt;boolean|UrlTree&gt;|boolean|UrlTree { ... }<br>}<br><br>{ path: ..., canActivateChild: [CanActivateGuard],<br>    children: ... }</code></td>
+<td><p>An interface for defining a class that the router should call first to determine if it should activate the child route. Should return a boolean|UrlTree or an Observable/Promise that resolves to a boolean|UrlTree.</p>
 </td>
 </tr><tr>
 <td><code>class <b>Resolve</b>Guard implements <b>Resolve</b>&lt;T&gt; {<br>    resolve(<br>      route: ActivatedRouteSnapshot,<br>      state: RouterStateSnapshot<br>    ): Observable&lt;any&gt;|Promise&lt;any&gt;|any { ... }<br>}<br><br>{ path: ..., resolve: [<b>Resolve</b>Guard] }</code></td>
 <td><p>An interface for defining a class that the router should call first to resolve route data before rendering the route. Should return a value or an Observable/Promise that resolves to a value.</p>
 </td>
 </tr><tr>
-<td><code>class <b>CanLoad</b>Guard implements <b>CanLoad</b> {<br>    canLoad(<br>      route: Route<br>    ): Observable&lt;boolean&gt;|Promise&lt;boolean&gt;|boolean { ... }<br>}<br><br>{ path: ..., canLoad: [<b>CanLoad</b>Guard], loadChildren: ... }</code></td>
-<td><p>An interface for defining a class that the router should call first to check if the lazy loaded module should be loaded. Should return a boolean or an Observable/Promise that resolves to a boolean.</p>
+<td><code>class <b>CanLoad</b>Guard implements <b>CanLoad</b> {<br>    canLoad(<br>      route: Route<br>    ): Observable&lt;boolean|UrlTree&gt;|Promise&lt;boolean|UrlTree&gt;|boolean|UrlTree { ... }<br>}<br><br>{ path: ..., canLoad: [<b>CanLoad</b>Guard], loadChildren: ... }</code></td>
+<td><p>An interface for defining a class that the router should call first to check if the lazy loaded module should be loaded. Should return a boolean|UrlTree or an Observable/Promise that resolves to a boolean|UrlTree.</p>
 </td>
 </tr>
 </tbody></table>

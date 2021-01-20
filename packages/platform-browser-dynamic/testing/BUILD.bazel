@@ -1,14 +1,14 @@
+load("//tools:defaults.bzl", "ng_module")
+
 package(default_visibility = ["//visibility:public"])
 
-load("@build_bazel_rules_typescript//:defs.bzl", "ts_library")
+exports_files(["package.json"])
 
-ts_library(
+ng_module(
     name = "testing",
-    testonly = 1,
     srcs = glob(["**/*.ts"]),
-    module_name = "@angular/platform-browser-dynamic/testing",
-    tsconfig = "//packages:tsconfig",
     deps = [
+        "//packages/common",
         "//packages/compiler",
         "//packages/compiler/testing",
         "//packages/core",

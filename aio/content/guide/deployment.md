@@ -1,60 +1,311 @@
 # Deployment
 
-This page describes techniques for deploying your Angular application to a remote server.
+When you are ready to deploy your Angular application to a remote server, you have various options for deployment.
 
 {@a dev-deploy}
 {@a copy-files}
 
-## Simplest deployment possible
 
-For the simplest deployment, build for development and copy the output directory to a web server.
+## Simple deployment options
 
-1. Start with the development build
+Before fully deploying your application, you can test the process, build configuration, and deployed behavior by using one of these interim techniques.
+
+### Building and serving from disk
+
+During development, you typically use the `ng serve` command to build, watch, and serve the application from local memory, using [webpack-dev-server](https://webpack.js.org/guides/development/#webpack-dev-server).
+When you are ready to deploy, however, you must use the `ng build` command to build the app and deploy the build artifacts elsewhere.
+
+Both `ng build` and `ng serve` clear the output folder before they build the project, but only the `ng build` command writes the generated build artifacts to the output folder.
+
+<div class="alert is-helpful">
+
+The output folder is  `dist/project-name/` by default.
+To output to a different folder, change the `outputPath` in `angular.json`.
+
+</div>
+
+As you near the end of the development process, serving the contents of your output folder from a local web server can give you a better idea of how your application will behave when it is deployed to a remote server.
+You will need two terminals to get the live-reload experience.
+
+* On the first terminal, run the [`ng build` command](cli/build) in *watch* mode to compile the application to the `dist` folder.
 
   <code-example language="none" class="code-shell">
-    ng build
+
+   ng build --watch
+
+  </code-example>
+
+  Like the `ng serve` command, this regenerates output files when source files change.
+
+* On the second terminal, install a web server (such as [lite-server](https://github.com/johnpapa/lite-server)), and run it against the output folder. For example:
+
+  <code-example language="none" class="code-shell">
+
+   lite-server --baseDir="dist/project-name"
+
+  </code-example>
+
+   The server will automatically reload your browser when new files are output.
+
+<div class="alert is-critical">
+
+This method is for development and testing only, and is not a supported or secure way of deploying an application.
+
+</div>
+
+### Automatic deployment with the CLI
+
+The Angular CLI command `ng deploy` (introduced in version 8.3.0) executes the `deploy` [CLI builder](guide/cli-builder) associated with your project. A number of third-party builders implement deployment capabilities to different platforms. You can add any of them to your project by running `ng add [package name]`.
+
+When you add a package with deployment capability, it'll automatically update your workspace configuration (`angular.json` file) with a `deploy` section for the selected project. You can then use the `ng deploy` command to deploy that project.
+
+For example, the following command automatically deploys a project to Firebase.
+
+<code-example language="none" class="code-shell">
+ng add @angular/fire
+ng deploy
+</code-example>
+
+The command is interactive. In this case, you must have or create a Firebase account, and authenticate using that account. The command prompts you to select a Firebase project for deployment
+
+After the command produces an optimal build of your application (equivalent to `ng deploy --prod`), it'll upload the production assets to Firebase.
+
+In the table below, you can find a list of packages which implement deployment functionality to different platforms. The `deploy` command for each package may require different command line options. You can read more by following the links associated with the package names below:
+
+| Deployment to                                                 | Package                                                                        |
+|---------------------------------------------------------------|--------------------------------------------------------------------------------|
+| [Firebase hosting](https://firebase.google.com/docs/hosting)  | [`@angular/fire`](https://npmjs.org/package/@angular/fire)                     |
+| [Azure](https://azure.microsoft.com/en-us/)                   | [`@azure/ng-deploy`](https://npmjs.org/package/@azure/ng-deploy)               |
+| [Now](https://zeit.co/now)                                    | [`@zeit/ng-deploy`](https://npmjs.org/package/@zeit/ng-deploy)                 |
+| [Netlify](https://www.netlify.com/)                           | [`@netlify-builder/deploy`](https://npmjs.org/package/@netlify-builder/deploy) |
+| [GitHub pages](https://pages.github.com/)                     | [`angular-cli-ghpages`](https://npmjs.org/package/angular-cli-ghpages)         |
+| [NPM](https://npmjs.com/)                                     | [`ngx-deploy-npm`](https://npmjs.org/package/ngx-deploy-npm)                   |
+| [Amazon Cloud S3](https://aws.amazon.com/s3/?nc2=h_ql_prod_st_s3) | [`@jefiozie/ngx-aws-deploy`](https://www.npmjs.com/package/@jefiozie/ngx-aws-deploy) |
+
+If you're deploying to a self-managed server or there's no builder for your favorite cloud platform, you can either create a builder that allows you to use the `ng deploy` command, or read through this guide to learn how to manually deploy your app.
+
+### Basic deployment to a remote server
+
+For the simplest deployment, create a production build and copy the output directory to a web server.
+
+1. Start with the production build:
+
+  <code-example language="none" class="code-shell">
+
+    ng build --prod
+
   </code-example>
 
 
-2. Copy _everything_ within the output folder (`dist/` by default) to a folder on the server.
+2. Copy _everything_ within the output folder (`dist/project-name/` by default) to a folder on the server.
 
+3. Configure the server to redirect requests for missing files to `index.html`.
+Learn more about server-side redirects [below](#fallback).
 
-3. If you copy the files into a server _sub-folder_, append the build flag, `--base-href` and set the `<base href>` appropriately.<br><br>
+This is the simplest production-ready deployment of your application.
 
-  For example, if the `index.html` is on the server at `/my/app/index.html`, set the _base href_  to
-  `<base href="/my/app/">` like this.
+{@a deploy-to-github}
+
+### Deploy to GitHub Pages
+
+To deploy your Angular application to [GitHub Pages](https://help.github.com/articles/what-is-github-pages/), complete the following steps:
+
+1. [Create a GitHub repository](https://help.github.com/articles/create-a-repo/) for your project.
+
+1. Configure `git` in your local project by adding a remote that specifies the GitHub repo you created in previous step.
+  GitHub provides these commands when you create the repo so that you can copy and paste them at your command prompt.
+  The commands should be similar to the following, though GitHub fills in your project-specific settings for you:
+
+  ```sh
+  git remote add origin https://github.com/your-username/your-project-name.git
+  git branch -M main
+  git push -u origin main
+  ```
+  When you paste these commands from GitHub, they run automatically.
+
+1. Create and check out a `git` branch named `gh-pages`.
+
+  ```sh
+  git checkout -b gh-pages
+  ```
+
+1. Build your project using the Github project name, with the Angular CLI command [`ng build`](cli/build) and the following options, where `your_project_name` is the name of the project that you gave the GitHub repository in step 1.
+
+  Be sure to include the slashes on either side of your project name as in `/your_project_name/`.
 
   <code-example language="none" class="code-shell">
-    ng build --base-href=/my/app/
+
+    ng build --prod --output-path docs --base-href /your_project_name/
+
   </code-example>
 
-  You'll see that the `<base href>` is set properly in the generated `dist/index.html`.<br><br>
-  If you copy to the server's root directory, omit this step and leave the `<base href>` alone.<br><br>
-  Learn more about the role of `<base href>` [below](guide/deployment#base-tag).
+1. When the build is complete, make a copy of `docs/index.html` and name it `docs/404.html`.
+
+1. Commit your changes and push.
+
+1. On the GitHub project page, go to Settings and scroll down to the GitHub Pages section to configure the site to [publish from the docs folder](https://help.github.com/articles/configuring-a-publishing-source-for-github-pages/#publishing-your-github-pages-site-from-a-docs-folder-on-your-master-branch).
+
+1. Click Save.
+
+1. Click on the GitHub Pages link at the top of the GitHub Pages section to see your deployed application.
+The format of the link is `https://<user_name>.github.io/<project_name>/`.
+
+<div class="alert is-helpful">
+
+Check out [angular-cli-ghpages](https://github.com/angular-buch/angular-cli-ghpages), a full featured package that does all this for you and has extra functionality.
+
+</div>
+
+<hr>
+
+{@a server-configuration}
+
+## Server configuration
+
+This section covers changes you may have to make to the server or to files deployed on the server.
+
+{@a fallback}
+
+### Routed apps must fallback to `index.html`
+
+Angular apps are perfect candidates for serving with a simple static HTML server.
+You don't need a server-side engine to dynamically compose application pages because
+Angular does that on the client-side.
+
+If the app uses the Angular router, you must configure the server
+to return the application's host page (`index.html`) when asked for a file that it does not have.
+
+{@a deep-link}
+
+A routed application should support "deep links".
+A _deep link_ is a URL that specifies a path to a component inside the app.
+For example, `http://www.mysite.com/heroes/42` is a _deep link_ to the hero detail page
+that displays the hero with `id: 42`.
+
+There is no issue when the user navigates to that URL from within a running client.
+The Angular router interprets the URL and routes to that page and hero.
+
+But clicking a link in an email, entering it in the browser address bar,
+or merely refreshing the browser while on the hero detail page &mdash;
+all of these actions are handled by the browser itself, _outside_ the running application.
+The browser makes a direct request to the server for that URL, bypassing the router.
+
+A static server routinely returns `index.html` when it receives a request for `http://www.mysite.com/`.
+But it rejects `http://www.mysite.com/heroes/42` and returns a `404 - Not Found` error *unless* it is
+configured to return `index.html` instead.
+
+#### Fallback configuration examples
+
+There is no single configuration that works for every server.
+The following sections describe configurations for some of the most popular servers.
+The list is by no means exhaustive, but should provide you with a good starting point.
+
+* [Apache](https://httpd.apache.org/): add a
+[rewrite rule](https://httpd.apache.org/docs/current/mod/mod_rewrite.html) to the `.htaccess` file as shown
+  (https://ngmilk.rocks/2015/03/09/angularjs-html5-mode-or-pretty-urls-on-apache-using-htaccess/):
+
+  <code-example>
+    RewriteEngine On
+    &#35 If an existing asset or directory is requested go to it as it is
+    RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI} -f [OR]
+    RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI} -d
+    RewriteRule ^ - [L]<br>
+    &#35 If the requested resource doesn't exist, use index.html
+    RewriteRule ^ /index.html
+  </code-example>
 
 
-4. Configure the server to redirect requests for missing files to `index.html`.
-Learn more about server-side redirects [below](guide/deployment#fallback).
+* [Nginx](https://nginx.org/): use `try_files`, as described in
+[Front Controller Pattern Web Apps](https://www.nginx.com/resources/wiki/start/topics/tutorials/config_pitfalls/#front-controller-pattern-web-apps),
+modified to serve `index.html`:
+
+  ```
+  try_files $uri $uri/ /index.html;
+  ```
+
+* [Ruby](https://www.ruby-lang.org/): create a Ruby server using ([sinatra](http://sinatrarb.com/)) with a basic Ruby file that configures the server `server.rb`:
+
+  ``` ruby
+  require 'sinatra'
+
+  # Folder structure
+  # .
+  # -- server.rb
+  # -- public
+  #    |-- project-name
+  #        |-- index.html
+
+  get '/' do
+      folderDir = settings.public_folder + '/project-name'  # ng build output folder
+      send_file File.join(folderDir, 'index.html')
+  end
+  ```
 
 
-This is _not_ a production deployment. It's not optimized and it won't be fast for users.
-It might be good enough for sharing your progress and ideas internally with managers, teammates, and other stakeholders.
+* [IIS](https://www.iis.net/): add a rewrite rule to `web.config`, similar to the one shown
+[here](https://stackoverflow.com/a/26152011):
+
+  <code-example format='.' language="xml">
+    &lt;system.webServer&gt;
+      &lt;rewrite&gt;
+        &lt;rules&gt;
+          &lt;rule name="Angular Routes" stopProcessing="true"&gt;
+            &lt;match url=".*" /&gt;
+            &lt;conditions logicalGrouping="MatchAll"&gt;
+              &lt;add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" /&gt;
+              &lt;add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" /&gt;
+            &lt;/conditions&gt;
+            &lt;action type="Rewrite" url="/index.html" /&gt;
+          &lt;/rule&gt;
+        &lt;/rules&gt;
+      &lt;/rewrite&gt;
+    &lt;/system.webServer&gt;
+  </code-example>
+
+
+* [GitHub Pages](https://pages.github.com/): you can't
+[directly configure](https://github.com/isaacs/github/issues/408)
+the GitHub Pages server, but you can add a 404 page.
+Copy `index.html` into `404.html`.
+It will still be served as the 404 response, but the browser will process that page and load the app properly.
+It's also a good idea to
+[serve from `docs/` on master](https://help.github.com/articles/configuring-a-publishing-source-for-github-pages/#publishing-your-github-pages-site-from-a-docs-folder-on-your-master-branch)
+and to
+[create a `.nojekyll` file](https://www.bennadel.com/blog/3181-including-node-modules-and-vendors-folders-in-your-github-pages-site.htm)
+
+
+* [Firebase hosting](https://firebase.google.com/docs/hosting/): add a
+[rewrite rule](https://firebase.google.com/docs/hosting/url-redirects-rewrites#section-rewrites).
+
+  <code-example language="json">
+    "rewrites": [ {
+      "source": "**",
+      "destination": "/index.html"
+    } ]
+  </code-example>
+
+{@a cors}
+
+### Requesting services from a different server (CORS)
+
+Angular developers may encounter a
+<a href="https://en.wikipedia.org/wiki/Cross-origin_resource_sharing" title="Cross-origin resource sharing">
+<i>cross-origin resource sharing</i></a> error when making a service request (typically a data service request)
+to a server other than the application's own host server.
+Browsers forbid such requests unless the server permits them explicitly.
+
+There isn't anything the client application can do about these errors.
+The server must be configured to accept the application's requests.
+Read about how to enable CORS for specific servers at
+<a href="https://enable-cors.org/server.html" title="Enabling CORS server">enable-cors.org</a>.
+
+<hr>
 
 {@a optimize}
 
-## Optimize for production
+## Production optimizations
 
-Although deploying directly from the development environment works, 
-you can generate an optimized build with additional CLI command line flags,
-starting with `--prod`.
-
-### Build with _--prod_
-
-<code-example language="none" class="code-shell">
-  ng build --prod
-</code-example>
-
-The `--prod` _meta-flag_ engages the following optimization features.
+The `--prod` _meta-flag_ engages the following build optimization features.
 
 * [Ahead-of-Time (AOT) Compilation](guide/aot-compiler): pre-compiles Angular component templates.
 * [Production mode](#enable-prod-mode): deploys the production environment which enables _production mode_.
@@ -63,32 +314,24 @@ The `--prod` _meta-flag_ engages the following optimization features.
 * Uglification: rewrites code to use short, cryptic variable and function names.
 * Dead code elimination: removes unreferenced modules and much unused code.
 
-The remaining [copy deployment steps](#copy-files) are the same as before.
+See [`ng build`](cli/build) for more about CLI build options and what they do.
 
-You may further reduce bundle sizes by adding the `build-optimizer` flag.
-
-<code-example language="none" class="code-shell">
-  ng build --prod --build-optimizer
-</code-example>
-
-See the [CLI Documentation](https://github.com/angular/angular-cli/wiki/build) 
-for details about available build options and what they do.
 
 {@a enable-prod-mode}
 
-### Enable production mode
+### Enable runtime production mode
 
-Angular apps run in development mode by default, as you can see by the following message on the browser
-console:
+In addition to build optimizations, Angular also has a runtime production mode. Angular apps run in development mode by default, as you can see by the following message on the browser console:
 
 <code-example format="nocode">
-  Angular is running in the development mode. Call enableProdMode() to enable the production mode.
+
+  Angular is running in development mode. Call enableProdMode() to enable production mode.
+
 </code-example>
 
-Switching to _production mode_ can make it run faster by disabling development specific checks such as the dual change detection cycles.
+Switching to _production mode_ makes it run faster by disabling development specific checks such as the dual change detection cycles.
 
-Building for production (or appending the `--environment=prod` flag) enables _production mode_
-Look at the CLI-generated `main.ts` to see how this works.
+When you enable production builds via `--prod` command line flag, the runtime production mode is enabled as well.
 
 {@a lazy-loading}
 
@@ -98,26 +341,28 @@ You can dramatically reduce launch time by only loading the application modules 
 absolutely must be present when the app starts.
 
 Configure the Angular Router to defer loading of all other modules (and their associated code), either by
-[waiting until the app has launched](guide/router#preloading  "Preloading")
-or by [_lazy loading_](guide/router#asynchronous-routing "Lazy loading")
+[waiting until the app has launched](guide/router-tutorial-toh#preloading  "Preloading")
+or by [_lazy loading_](guide/router#lazy-loading "Lazy loading")
 them on demand.
 
-#### Don't eagerly import something from a lazy loaded module
+<div class="callout is-helpful">
 
-It's a common mistake.
-You've arranged to lazy load a module.
-But you unintentionally import it, with a JavaScript `import` statement,
-in a file that's eagerly loaded when the app starts, a file such as the root `AppModule`.
+<header>Don't eagerly import something from a lazy-loaded module</header>
+
+If you mean to lazy-load a module, be careful not to import it
+in a file that's eagerly loaded when the app starts (such as the root `AppModule`).
 If you do that, the module will be loaded immediately.
 
 The bundling configuration must take lazy loading into consideration.
-Because lazy loaded modules aren't imported in JavaScript (as just noted), bundlers exclude them by default.
-Bundlers don't know about the router configuration and won't create separate bundles for lazy loaded modules.
-You have to create these bundles manually.
+Because lazy-loaded modules aren't imported in JavaScript, bundlers exclude them by default.
+Bundlers don't know about the router configuration and can't create separate bundles for lazy-loaded modules.
+You would have to create these bundles manually.
 
 The CLI runs the
-[Angular Ahead-of-Time Webpack Plugin](https://github.com/angular/angular-cli/tree/master/packages/%40ngtools/webpack)
-which automatically recognizes lazy loaded `NgModules` and creates separate bundles for them.
+[Angular Ahead-of-Time Webpack Plugin](https://github.com/angular/angular-cli/tree/master/packages/ngtools/webpack)
+which automatically recognizes lazy-loaded `NgModules` and creates separate bundles for them.
+
+</div>
 
 {@a measure}
 
@@ -146,36 +391,44 @@ tool is a great way to inspect the generated JavaScript bundles after a producti
 Install `source-map-explorer`:
 
 <code-example language="none" class="code-shell">
+
   npm install source-map-explorer --save-dev
+
 </code-example>
 
 Build your app for production _including the source maps_
 
 <code-example language="none" class="code-shell">
-  ng build --prod --sourcemaps
+
+  ng build --prod --source-map
+
 </code-example>
 
-List the generated bundles in the `dist/` folder.
+List the generated bundles in the `dist/project-name/` folder.
 
 <code-example language="none" class="code-shell">
-  ls dist/*.bundle.js
+
+  ls dist/project-name/*.js
+
 </code-example>
 
 Run the explorer to generate a graphical representation of one of the bundles.
 The following example displays the graph for the _main_ bundle.
 
 <code-example language="none" class="code-shell">
-  node_modules/.bin/source-map-explorer dist/main.*.bundle.js
+
+  node_modules/.bin/source-map-explorer dist/project-name/main*
+
 </code-example>
 
 The `source-map-explorer` analyzes the source map generated with the bundle and draws a map of all dependencies,
 showing exactly which classes are included in the bundle.
 
-Here's the output for the _main_ bundle of the QuickStart.
+Here's the output for the _main_ bundle of an example app called `cli-quickstart`.
 
-<figure>
-  <img src="generated/images/guide/cli-quickstart/quickstart-sourcemap-explorer.png" alt="quickstart sourcemap explorer">
-</figure>
+<div class="lightbox">
+  <img src="generated/images/guide/deployment/quickstart-sourcemap-explorer.png" alt="quickstart sourcemap explorer">
+</div>
 
 {@a base-tag}
 
@@ -187,7 +440,7 @@ For example, given the `<base href="/my/app/">`, the browser resolves a URL such
 into a server request for `my/app/some/place/foo.jpg`.
 During navigation, the Angular router uses the _base href_ as the base path to component, template, and module files.
 
-<div class="l-sub-section">
+<div class="alert is-helpful">
 
 See also the [*APP_BASE_HREF*](api/common/APP_BASE_HREF "API: APP_BASE_HREF") alternative.
 
@@ -203,179 +456,286 @@ the subfolder is `my/app/` and you should add `<base href="/my/app/">` to the se
 When the `base` tag is mis-configured, the app fails to load and the browser console displays `404 - Not Found` errors
 for the missing files. Look at where it _tried_ to find those files and adjust the base tag appropriately.
 
-## _build_ vs. _serve_
+{@a differential-loading}
 
-You'll probably prefer `ng build` for deployments.
+## Differential Loading
 
-The **ng build** command is intended for building the app and deploying the build artifacts elsewhere.
-The **ng serve** command is intended for fast, local, iterative development.
+When building web applications, you want to make sure your application is compatible with the majority of browsers.
+Even as JavaScript continues to evolve, with new features being introduced, not all browsers are updated with support for these new features at the same pace.
 
-Both `ng build` and `ng serve` **clear the output folder** before they build the project.
-The `ng build` command writes generated build artifacts to the output folder.
-The `ng serve` command does not.
-It serves build artifacts from memory instead for a faster development experience.
+The code you write in development using TypeScript is compiled and bundled into ES2015, the JavaScript syntax that is compatible with most browsers.
+All modern browsers support ES2015 and beyond, but in most cases, you still have to account for users accessing your application from a browser that doesn't.
+When targeting older browsers, [polyfills](guide/browser-support#polyfills) can bridge the gap by providing functionality that doesn't exist in the older versions of JavaScript supported by those browsers.
 
-<div class="l-sub-section">
+To maximize compatibility, you could ship a single bundle that includes all your compiled code, plus any polyfills that may be needed.
+Users with modern browsers, however, shouldn't have to pay the price of increased bundle size that comes with polyfills they don't need.
+Differential loading, which is supported in Angular CLI version 8 and higher, can help solve this problem.
 
-The output folder is  `dist/` by default.
-To output to a different folder, change the `outDir` in `.angular-cli.json`.
+Differential loading is a strategy that allows your web application to support multiple browsers, but only load the necessary code that the browser needs. When differential loading is enabled the CLI builds two separate bundles as part of your deployed application.
+
+* The first bundle contains modern ES2015 syntax. This bundle takes advantage of built-in support in modern browsers, ships fewer polyfills, and results in a smaller bundle size.
+
+* The second bundle contains code in the old ES5 syntax, along with all necessary polyfills. This second bundle is larger, but supports older browsers.
+
+### Differential builds
+
+When you deploy using the Angular CLI build process, you can choose how and when to support differential loading.
+The [`ng build` CLI command](cli/build) queries the browser configuration and the configured build target to determine if support for legacy browsers is required, and whether the build should produce the necessary bundles used for differential loading.
+
+The following configurations determine your requirements.
+
+* Browserslist
+
+   The Browserslist configuration file is included in your application [project structure](guide/file-structure#application-configuration-files) and provides the minimum browsers your application supports. See the [Browserslist spec](https://github.com/browserslist/browserslist) for complete configuration options.
+
+* TypeScript configuration
+
+   In the TypeScript configuration file, the "target" option in the `compilerOptions` section determines the ECMAScript target version that the code is compiled to.
+   Modern browsers support ES2015 natively, while ES5 is more commonly used to support legacy browsers.
+
+<div class="alert is-helpful">
+
+   Differential loading is currently only supported when using `es2015` as a compilation target. When used with targets higher than `es2015`, the build process emits a warning.
 
 </div>
 
-The `ng serve` command builds, watches, and serves the application from a local CLI development server.
+For a development build, the output produced by `ng build` is simpler and easier to debug, allowing you to rely less on sourcemaps of compiled code.
 
-The `ng build` command generates output files just once and does not serve them.
-The `ng build --watch` command will regenerate output files when source files change.
-This `--watch` flag is useful if you're building during development and 
-are automatically re-deploying changes to another server.
+For a production build, your configuration determines which bundles are created for deployment of your application.
+When needed, the `index.html` file is also modified during the build process to include script tags that enable differential loading, as shown in the following example.
 
+<code-example language="html" header="index.html">
+&lt;body>
+  &lt;app-root>&lt;/app-root>
+  &lt;script src="runtime-es2015.js" type="module">&lt;/script>
+  &lt;script src="runtime-es5.js" nomodule>&lt;/script>
+  &lt;script src="polyfills-es2015.js" type="module">&lt;/script>
+  &lt;script src="polyfills-es5.js" nomodule>&lt;/script>
+  &lt;script src="styles-es2015.js" type="module">&lt;/script>
+  &lt;script src="styles-es5.js" nomodule>&lt;/script>
+  &lt;script src="vendor-es2015.js" type="module">&lt;/script>
+  &lt;script src="vendor-es5.js" nomodule>&lt;/script>
+  &lt;script src="main-es2015.js" type="module">&lt;/script>
+  &lt;script src="main-es5.js" nomodule>&lt;/script>
+&lt;/body>
+</code-example>
 
-See the [CLI `build` topic](https://github.com/angular/angular-cli/wiki/build) for more details and options.
+Each script tag has a `type="module"` or `nomodule` attribute. Browsers with native support for ES modules only load the scripts with the `module` type attribute and ignore scripts with the `nomodule` attribute. Legacy browsers only load the scripts with the `nomodule` attribute, and ignore the script tags with the `module` type that load ES modules.
 
-<hr>
+<div class="alert is-helpful">
 
-{@a server-configuration}
+   Some legacy browsers still download both bundles, but only execute the appropriate scripts based on the attributes mentioned above. You can read more on the issue [here](https://github.com/philipwalton/webpack-esnext-boilerplate/issues/1).
 
-## Server configuration
+</div>
 
-This section covers changes you may have make to the server or to files deployed to the server.
+### Configuring differential loading
 
-{@a fallback}
+To include differential loading in your application builds, you must configure the Browserslist and TypeScript configuration files in your application project.
 
-### Routed apps must fallback to `index.html`
+The following examples show a `.browserslistrc` and `tsconfig.json` file for a newly created Angular application. In this configuration, legacy browsers such as IE 9-11 are ignored, and the compilation target is ES2015.
 
-Angular apps are perfect candidates for serving with a simple static HTML server.
-You don't need a server-side engine to dynamically compose application pages because
-Angular does that on the client-side.
+<code-example language="none" header=".browserslistrc">
+# This file is used by the build system to adjust CSS and JS output to support the specified browsers below.
+# For additional information regarding the format and rule options, please see:
+# https://github.com/browserslist/browserslist#queries
 
-If the app uses the Angular router, you must configure the server
-to return the application's host page (`index.html`) when asked for a file that it does not have.
+# For the full list of supported browsers by the Angular framework, please see:
+# https://angular.io/guide/browser-support
 
-{@a deep-link}
+# You can see what browsers were selected by your queries by running:
+#   npx browserslist
 
+last 1 Chrome version
+last 1 Firefox version
+last 2 Edge major versions
+last 2 Safari major versions
+last 2 iOS major versions
+Firefox ESR
+not IE 11 # Angular supports IE 11 only as an opt-in. To opt-in, remove the 'not' prefix on this line.
+</code-example>
 
-A routed application should support "deep links".
-A _deep link_ is a URL that specifies a path to a component inside the app.
-For example, `http://www.mysite.com/heroes/42` is a _deep link_ to the hero detail page
-that displays the hero with `id: 42`.
+<code-example language="json" header="tsconfig.json">
 
-There is no issue when the user navigates to that URL from within a running client.
-The Angular router interprets the URL and routes to that page and hero.
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "baseUrl": "./",
+    "outDir": "./dist/out-tsc",
+    "sourceMap": true,
+    "declaration": false,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "importHelpers": true,
+    "target": "es2015",
+    "typeRoots": [
+      "node_modules/@types"
+    ],
+    "lib": [
+      "es2018",
+      "dom"
+    ]
+  }
+}
 
-But clicking a link in an email, entering it in the browser address bar,
-or merely refreshing the browser while on the hero detail page &mdash;
-all of these actions are handled by the browser itself, _outside_ the running application.
-The browser makes a direct request to the server for that URL, bypassing the router.
+</code-example>
 
-A static server routinely returns `index.html` when it receives a request for `http://www.mysite.com/`.
-But it rejects `http://www.mysite.com/heroes/42` and returns a `404 - Not Found` error *unless* it is
-configured to return `index.html` instead.
+<div class="alert is-important">
 
-#### Fallback configuration examples
+   To see which browsers are supported and determine which settings meet to your browser support requirements, see the [Browserslist compatibility page](https://browserl.ist/?q=%3E+0.5%25%2C+last+2+versions%2C+Firefox+ESR%2C+not+dead%2C+not+IE+9-11).
 
-There is no single configuration that works for every server.
-The following sections describe configurations for some of the most popular servers.
-The list is by no means exhaustive, but should provide you with a good starting point.
+</div>
 
-#### Development servers
+The Browserslist configuration allows you to ignore browsers without ES2015 support. In this case, a single build is produced.
 
-* [Lite-Server](https://github.com/johnpapa/lite-server): the default dev server installed with the
-[Quickstart repo](https://github.com/angular/quickstart) is pre-configured to fallback to `index.html`.
+If your Browserslist configuration includes support for any legacy browsers, the build target in the TypeScript configuration determines whether the build will support differential loading.
 
+{@a configuration-table }
 
-* [Webpack-Dev-Server](https://github.com/webpack/webpack-dev-server):  setup the
-`historyApiFallback` entry in the dev server options as follows:
+| Browserslist | ES target | Build result |
+| -------- | -------- | -------- |
+| ES5 support disabled | es2015  | Single build, ES5 not required |
+| ES5 support enabled  | es5     | Single build w/conditional polyfills for ES5 only |
+| ES5 support enabled  | es2015  | Differential loading (two builds w/conditional polyfills) |
 
-  <code-example>
-    historyApiFallback: {
-      disableDotRule: true,
-      htmlAcceptHeaders: ['text/html', 'application/xhtml+xml']
+{@a test-and-serve}
+
+## Local development in older browsers
+
+Differential loading is not enabled by default for application projects that were generated with Angular CLI 10 and above.
+The `ng serve`, `ng test`, and `ng e2e` commands, however, generate a single ES2015 build which cannot run in older browsers that don't support the modules, such as IE 11.
+
+To maintain the benefits of differential loading, however, a better option is to define multiple configurations for `ng serve`, `ng e2e`, and `ng test`.
+
+{@a differential-serve}
+
+### Configuring serve for ES5
+
+To do this for `ng serve`, create a new file, `tsconfig-es5.app.json` next to `tsconfig.app.json` with the following content.
+
+<code-example language="json">
+
+{
+ "extends": "./tsconfig.app.json",
+ "compilerOptions": {
+     "target": "es5"
+  }
+}
+
+</code-example>
+
+In `angular.json` add two new configuration sections under the `build` and `serve` targets to point to the new TypeScript configuration.
+
+<code-example language="json">
+
+"build": {
+  "builder": "@angular-devkit/build-angular:browser",
+  "options": {
+      ...
+  },
+  "configurations": {
+    "production": {
+        ...
+    },
+    "es5": {
+      "tsConfig": "./tsconfig-es5.app.json"
     }
-  </code-example>
+  }
+},
+"serve": {
+  "builder": "@angular-devkit/build-angular:dev-server",
+  "options": {
+      ...
+  },
+  "configurations": {
+    "production": {
+     ...
+    },
+    "es5": {
+      "browserTarget": "&lt;app-name&gt;:build:es5"
+    }
+  }
+},
 
+</code-example>
 
-#### Production servers
+You can then run the `ng serve` command with this configuration. Make sure to replace `<app-name>` (in `"<app-name>:build:es5"`) with the actual name of the app, as it appears under `projects` in `angular.json`. For example, if your app name is `myAngularApp` the config will become `"browserTarget": "myAngularApp:build:es5"`.
 
-* [Apache](https://httpd.apache.org/): add a
-[rewrite rule](http://httpd.apache.org/docs/current/mod/mod_rewrite.html) to the `.htaccess` file as shown
-  (https://ngmilk.rocks/2015/03/09/angularjs-html5-mode-or-pretty-urls-on-apache-using-htaccess/):
+<code-example language="none" class="code-shell">
 
-  <code-example format=".">
-    RewriteEngine On
-    &#35 If an existing asset or directory is requested go to it as it is
-    RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI} -f [OR]
-    RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI} -d
-    RewriteRule ^ - [L]
+ng serve --configuration es5
 
-    &#35 If the requested resource doesn't exist, use index.html
-    RewriteRule ^ /index.html
-  </code-example>
+</code-example>
 
+{@a differential-test}
 
-* [NGinx](http://nginx.org/): use `try_files`, as described in
-[Front Controller Pattern Web Apps](https://www.nginx.com/resources/wiki/start/topics/tutorials/config_pitfalls/#front-controller-pattern-web-apps),
-modified to serve `index.html`:
+### Configuring the test command
 
-  <code-example format=".">
-    try_files $uri $uri/ /index.html;
-  </code-example>
+Create a new file, `tsconfig-es5.spec.json` next to `tsconfig.spec.json` with the following content.
 
+<code-example language="json">
 
-* [IIS](https://www.iis.net/): add a rewrite rule to `web.config`, similar to the one shown
-[here](http://stackoverflow.com/a/26152011/2116927):
+{
+ "extends": "./tsconfig.spec.json",
+ "compilerOptions": {
+     "target": "es5"
+  }
+}
 
-  <code-example format='.'>
-    &lt;system.webServer&gt;
-      &lt;rewrite&gt;
-        &lt;rules&gt;
-          &lt;rule name="Angular Routes" stopProcessing="true"&gt;
-            &lt;match url=".*" /&gt;
-            &lt;conditions logicalGrouping="MatchAll"&gt;
-              &lt;add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" /&gt;
-              &lt;add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" /&gt;
-            &lt;/conditions&gt;
-            &lt;action type="Rewrite" url="/src/" /&gt;
-          &lt;/rule&gt;
-        &lt;/rules&gt;
-      &lt;/rewrite&gt;
-    &lt;/system.webServer&gt;
+</code-example>
 
-  </code-example>
+<code-example language="json">
 
+"test": {
+  "builder": "@angular-devkit/build-angular:karma",
+  "options": {
+      ...
+  },
+  "configurations": {
+    "es5": {
+      "tsConfig": "./tsconfig-es5.spec.json"
+    }
+  }
+},
 
-* [GitHub Pages](https://pages.github.com/): you can't
-[directly configure](https://github.com/isaacs/github/issues/408)
-the GitHub Pages server, but you can add a 404 page.
-Copy `index.html` into `404.html`.
-It will still be served as the 404 response, but the browser will process that page and load the app properly.
-It's also a good idea to
-[serve from `docs/` on master](https://help.github.com/articles/configuring-a-publishing-source-for-github-pages/#publishing-your-github-pages-site-from-a-docs-folder-on-your-master-branch)
-and to
-[create a `.nojekyll` file](https://www.bennadel.com/blog/3181-including-node-modules-and-vendors-folders-in-your-github-pages-site.htm)
+</code-example>
 
+You can then run the tests with this configuration
 
-* [Firebase hosting](https://firebase.google.com/docs/hosting/): add a
-[rewrite rule](https://firebase.google.com/docs/hosting/url-redirects-rewrites#section-rewrites).
+<code-example language="none" class="code-shell">
 
-  <code-example format=".">
-    "rewrites": [ {
-      "source": "**",
-      "destination": "/index.html"
-    } ]
+ng test --configuration es5
 
-  </code-example>
+</code-example>
 
-{@a cors}
+### Configuring the e2e command
 
-### Requesting services from a different server (CORS)
+Create an [ES5 serve configuration](guide/deployment#configuring-serve-for-es5) as explained above, and configuration an ES5 configuration for the E2E target.
 
-Angular developers may encounter a
-<a href="https://en.wikipedia.org/wiki/Cross-origin_resource_sharing" title="Cross-origin resource sharing">
-<i>cross-origin resource sharing</i></a> error when making a service request (typically a data service request).
-to a server other than the application's own host server.
-Browsers forbid such requests unless the server permits them explicitly.
+<code-example language="json">
 
-There isn't anything the client application can do about these errors.
-The server must be configured to accept the application's requests.
-Read about how to enable CORS for specific servers at
-<a href="http://enable-cors.org/server.html" title="Enabling CORS server">enable-cors.org</a>.
+"e2e": {
+  "builder": "@angular-devkit/build-angular:protractor",
+  "options": {
+      ...
+  },
+  "configurations": {
+	  "production": {
+		  ...
+	  },
+    "es5": {
+      "devServerTarget": "&lt;app-name&gt;:serve:es5"
+    }
+  }
+},
+
+</code-example>
+
+You can then run the `ng e2e` command with this configuration. Make sure to replace `<app-name>` (in `"<app-name>:serve:es5"`) with the actual name of the app, as it appears under `projects` in `angular.json`. For example, if your app name is `myAngularApp` the config will become `"devServerTarget": "myAngularApp:serve:es5"`.
+
+<code-example language="none" class="code-shell">
+
+ng e2e --configuration es5
+
+</code-example>

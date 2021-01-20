@@ -1,13 +1,12 @@
 built/
 dist/
 vendor/
-yarn.lock
-.ng-cli/
-cli-*/**
+tmp/
 */src/*.d.ts
 */src/*.js
+!karma.conf.js
 **/*.ngfactory.ts
 **/*.ngsummary.json
 **/*.ngsummary.ts
-*/yarn*
 **/.yarn_local_cache*
+**/NPM_PACKAGE_MANIFEST.json

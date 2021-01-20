@@ -1,20 +1,20 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 export const ANY_STATE = '*';
-export declare type TransitionMatcherFn = (fromState: any, toState: any) => boolean;
+export declare type TransitionMatcherFn =
+    (fromState: any, toState: any, element: any, params: {[key: string]: any}) => boolean;
 
 export function parseTransitionExpr(
-    transitionValue: string | TransitionMatcherFn, errors: string[]): TransitionMatcherFn[] {
+    transitionValue: string|TransitionMatcherFn, errors: string[]): TransitionMatcherFn[] {
   const expressions: TransitionMatcherFn[] = [];
   if (typeof transitionValue == 'string') {
-    (<string>transitionValue)
-        .split(/\s*,\s*/)
-        .forEach(str => parseInnerTransitionStr(str, expressions, errors));
+    transitionValue.split(/\s*,\s*/).forEach(
+        str => parseInnerTransitionStr(str, expressions, errors));
   } else {
     expressions.push(<TransitionMatcherFn>transitionValue);
   }
@@ -29,7 +29,7 @@ function parseInnerTransitionStr(
       expressions.push(result);
       return;
     }
-    eventStr = result as string;
+    eventStr = result;
   }
 
   const match = eventStr.match(/^(\*|[-\w]+)\s*(<?[=-]>)\s*(\*|[-\w]+)$/);

@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -11,34 +11,43 @@ import {Directive, EmbeddedViewRef, Input, OnChanges, SimpleChange, SimpleChange
 /**
  * @ngModule CommonModule
  *
- * @whatItDoes Inserts an embedded view from a prepared `TemplateRef`
- *
- * @howToUse
- * ```
- * <ng-container *ngTemplateOutlet="templateRefExp; context: contextExp"></ng-container>
- * ```
- *
  * @description
+ *
+ * Inserts an embedded view from a prepared `TemplateRef`.
  *
  * You can attach a context object to the `EmbeddedViewRef` by setting `[ngTemplateOutletContext]`.
  * `[ngTemplateOutletContext]` should be an object, the object's keys will be available for binding
  * by the local template `let` declarations.
  *
- * Note: using the key `$implicit` in the context object will set it's value as default.
+ * @usageNotes
+ * ```
+ * <ng-container *ngTemplateOutlet="templateRefExp; context: contextExp"></ng-container>
+ * ```
  *
- * ## Example
+ * Using the key `$implicit` in the context object will set its value as default.
+ *
+ * ### Example
  *
  * {@example common/ngTemplateOutlet/ts/module.ts region='NgTemplateOutlet'}
  *
- * @stable
+ * @publicApi
  */
 @Directive({selector: '[ngTemplateOutlet]'})
 export class NgTemplateOutlet implements OnChanges {
-  private _viewRef: EmbeddedViewRef<any>;
+  private _viewRef: EmbeddedViewRef<any>|null = null;
 
-  @Input() public ngTemplateOutletContext: Object;
+  /**
+   * A context object to attach to the {@link EmbeddedViewRef}. This should be an
+   * object, the object's keys will be available for binding by the local template `let`
+   * declarations.
+   * Using the key `$implicit` in the context object will set its value as default.
+   */
+  @Input() public ngTemplateOutletContext: Object|null = null;
 
-  @Input() public ngTemplateOutlet: TemplateRef<any>;
+  /**
+   * A string defining the template reference and optionally the context object for the template.
+   */
+  @Input() public ngTemplateOutlet: TemplateRef<any>|null = null;
 
   constructor(private _viewContainerRef: ViewContainerRef) {}
 
@@ -46,18 +55,17 @@ export class NgTemplateOutlet implements OnChanges {
     const recreateView = this._shouldRecreateView(changes);
 
     if (recreateView) {
+      const viewContainerRef = this._viewContainerRef;
+
       if (this._viewRef) {
-        this._viewContainerRef.remove(this._viewContainerRef.indexOf(this._viewRef));
+        viewContainerRef.remove(viewContainerRef.indexOf(this._viewRef));
       }
 
-      if (this.ngTemplateOutlet) {
-        this._viewRef = this._viewContainerRef.createEmbeddedView(
-            this.ngTemplateOutlet, this.ngTemplateOutletContext);
-      }
-    } else {
-      if (this._viewRef && this.ngTemplateOutletContext) {
-        this._updateExistingContext(this.ngTemplateOutletContext);
-      }
+      this._viewRef = this.ngTemplateOutlet ?
+          viewContainerRef.createEmbeddedView(this.ngTemplateOutlet, this.ngTemplateOutletContext) :
+          null;
+    } else if (this._viewRef && this.ngTemplateOutletContext) {
+      this._updateExistingContext(this.ngTemplateOutletContext);
     }
   }
 
@@ -87,14 +95,13 @@ export class NgTemplateOutlet implements OnChanges {
         }
       }
       return false;
-    } else {
-      return true;
     }
+    return true;
   }
 
   private _updateExistingContext(ctx: Object): void {
     for (let propName of Object.keys(ctx)) {
-      (<any>this._viewRef.context)[propName] = (<any>this.ngTemplateOutletContext)[propName];
+      (<any>this._viewRef!.context)[propName] = (<any>this.ngTemplateOutletContext)[propName];
     }
   }
 }

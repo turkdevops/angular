@@ -1,14 +1,14 @@
 // #docplaster
 // #docregion
-import { Component, OnInit, Input } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 // #docregion added-imports
 import { ActivatedRoute } from '@angular/router';
 import { Location } from '@angular/common';
 
 // #enddocregion added-imports
-import { Hero }         from '../hero';
+import { Hero } from '../hero';
 // #docregion added-imports
-import { HeroService }  from '../hero.service';
+import { HeroService } from '../hero.service';
 // #enddocregion added-imports
 
 @Component({
@@ -17,7 +17,7 @@ import { HeroService }  from '../hero.service';
   styleUrls: [ './hero-detail.component.css' ]
 })
 export class HeroDetailComponent implements OnInit {
-  @Input() hero: Hero;
+  hero: Hero;
 
   // #docregion ctor
   constructor(

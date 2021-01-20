@@ -1,33 +1,30 @@
-import { HeroDetailComponent } from './hero-detail.component';
-import { Hero }                from '../model';
+import { asyncData, ActivatedRouteStub } from '../../testing';
 
-import { ActivatedRouteStub }  from '../../testing';
+import { HeroDetailComponent } from './hero-detail.component';
+import { Hero } from '../model/hero';
 
 //////////  Tests  ////////////////////
 
 describe('HeroDetailComponent - no TestBed', () => {
-  let activatedRoute: ActivatedRouteStub;
   let comp: HeroDetailComponent;
   let expectedHero: Hero;
   let hds: any;
   let router: any;
 
-  beforeEach((done: any) => {
-    expectedHero = new Hero(42, 'Bubba');
-    activatedRoute = new ActivatedRouteStub();
-    activatedRoute.testParamMap = { id: expectedHero.id };
-
+  beforeEach((done: DoneFn) => {
+    expectedHero = {id: 42, name: 'Bubba' };
+    const activatedRoute = new ActivatedRouteStub({ id: expectedHero.id });
     router = jasmine.createSpyObj('router', ['navigate']);
 
     hds = jasmine.createSpyObj('HeroDetailService', ['getHero', 'saveHero']);
-    hds.getHero.and.returnValue(Promise.resolve(expectedHero));
-    hds.saveHero.and.returnValue(Promise.resolve(expectedHero));
+    hds.getHero.and.returnValue(asyncData(expectedHero));
+    hds.saveHero.and.returnValue(asyncData(expectedHero));
 
-    comp = new HeroDetailComponent(hds, <any> activatedRoute, router);
+    comp = new HeroDetailComponent(hds, activatedRoute as any, router);
     comp.ngOnInit();
 
     // OnInit calls HDS.getHero; wait for it to get the fake hero
-    hds.getHero.calls.first().returnValue.then(done);
+    hds.getHero.calls.first().returnValue.subscribe(done);
   });
 
   it('should expose the hero retrieved from the service', () => {
@@ -45,11 +42,11 @@ describe('HeroDetailComponent - no TestBed', () => {
     expect(router.navigate.calls.any()).toBe(false, 'router.navigate not called yet');
   });
 
-  it('should navigate when click save resolves', (done: any) => {
+  it('should navigate when click save resolves', (done: DoneFn) => {
     comp.save();
     // waits for async save to complete before navigating
     hds.saveHero.calls.first().returnValue
-    .then(() => {
+    .subscribe(() => {
       expect(router.navigate.calls.any()).toBe(true, 'router.navigate called');
       done();
     });

@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -9,16 +9,16 @@
 // THIS CODE IS GENERATED - DO NOT MODIFY
 // See angular/tools/gulp-tasks/cldr/extract.js
 
+const u = undefined;
+
+function plural(n: number): number {
+  return 5;
+}
+
 export default [
   'kea',
-  [
-    ['a', 'p'],
-    ['am', 'pm'],
-  ],
-  [
-    ['am', 'pm'],
-    ,
-  ],
+  [['am', 'pm'], u, u],
+  u,
   [
     ['D', 'S', 'T', 'K', 'K', 'S', 'S'], ['dum', 'sig', 'ter', 'kua', 'kin', 'ses', 'sab'],
     ['dumingu', 'sigunda-fera', 'tersa-fera', 'kuarta-fera', 'kinta-fera', 'sesta-fera', 'sabadu'],
@@ -37,15 +37,19 @@ export default [
       'Otubru', 'Nuvenbru', 'Dizenbru'
     ]
   ],
-  , [['AK', 'DK'], , ['Antis di Kristu', 'Dispos di Kristu']], 1, [6, 0],
-  ['d/M/y', 'd MMM y', 'd \'di\' MMMM \'di\' y', 'EEEE, d \'di\' MMMM \'di\' y'],
+  u,
+  [['AK', 'DK'], u, ['antis di Kristu', 'dispos di Kristu']],
+  1,
+  [6, 0],
+  ['dd/MM/y', 'd MMM y', 'd \'di\' MMMM \'di\' y', 'EEEE, d \'di\' MMMM \'di\' y'],
   ['HH:mm', 'HH:mm:ss', 'HH:mm:ss z', 'HH:mm:ss zzzz'],
-  [
-    '{1} {0}',
-    ,
-    ,
-  ],
+  ['{1}, {0}', u, u, u],
   [',', ' ', ';', '%', '+', '-', 'E', '×', '‰', '∞', 'NaN', ':'],
-  ['#,##0.###', '#,##0%', '#,##0.00 ¤', '#E0'], '​', 'Skudu Kabuverdianu',
-  function(n: number): number { return 5;}
+  ['#,##0.###', '#,##0%', '#,##0.00 ¤', '#E0'],
+  'CVE',
+  '​',
+  'Skudu Kabuverdianu',
+  {'AUD': ['AU$', '$'], 'CVE': ['​'], 'JPY': ['JP¥', '¥'], 'THB': ['฿'], 'USD': ['US$', '$']},
+  'ltr',
+  plural
 ];

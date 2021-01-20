@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -8,7 +8,7 @@
 
 import {ParseError, ParseErrorLevel, ParseLocation, ParseSourceFile, ParseSourceSpan} from '../src/parse_util';
 
-export function main() {
+{
   describe('ParseError', () => {
     it('should reflect the level in the message', () => {
       const file = new ParseSourceFile(`foo\nbar\nfoo`, 'url');

@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -8,6 +8,7 @@
 import {AnimateTimings, AnimationMetadata, AnimationMetadataType, AnimationOptions, sequence, ɵStyleData} from '@angular/animations';
 import {Ast as AnimationAst, AstVisitor as AnimationAstVisitor} from './dsl/animation_ast';
 import {AnimationDslVisitor} from './dsl/animation_dsl_visitor';
+import {isNode} from './render/shared';
 
 export const ONE_SECOND = 1000;
 
@@ -22,10 +23,10 @@ export const NG_TRIGGER_SELECTOR = '.ng-trigger';
 export const NG_ANIMATING_CLASSNAME = 'ng-animating';
 export const NG_ANIMATING_SELECTOR = '.ng-animating';
 
-export function resolveTimingValue(value: string | number) {
+export function resolveTimingValue(value: string|number) {
   if (typeof value == 'number') return value;
 
-  const matches = (value as string).match(/^(-?[\.\d]+)(m?s)/);
+  const matches = value.match(/^(-?[\.\d]+)(m?s)/);
   if (!matches || matches.length < 2) return 0;
 
   return _convertTimeValueToMS(parseFloat(matches[1]), matches[2]);
@@ -41,14 +42,14 @@ function _convertTimeValueToMS(value: number, unit: string): number {
 }
 
 export function resolveTiming(
-    timings: string | number | AnimateTimings, errors: any[], allowNegativeValues?: boolean) {
+    timings: string|number|AnimateTimings, errors: any[], allowNegativeValues?: boolean) {
   return timings.hasOwnProperty('duration') ?
       <AnimateTimings>timings :
       parseTimeExpression(<string|number>timings, errors, allowNegativeValues);
 }
 
 function parseTimeExpression(
-    exp: string | number, errors: string[], allowNegativeValues?: boolean): AnimateTimings {
+    exp: string|number, errors: string[], allowNegativeValues?: boolean): AnimateTimings {
   const regex = /^(-?[\.\d]+)(m?s)(?:\s+(-?[\.\d]+)(m?s))?(?:\s+([-a-z]+(?:\(.+?\))?))?$/i;
   let duration: number;
   let delay: number = 0;
@@ -64,7 +65,7 @@ function parseTimeExpression(
 
     const delayMatch = matches[3];
     if (delayMatch != null) {
-      delay = _convertTimeValueToMS(Math.floor(parseFloat(delayMatch)), matches[4]);
+      delay = _convertTimeValueToMS(parseFloat(delayMatch), matches[4]);
     }
 
     const easingVal = matches[5];
@@ -72,7 +73,7 @@ function parseTimeExpression(
       easing = easingVal;
     }
   } else {
-    duration = <number>exp;
+    duration = exp;
   }
 
   if (!allowNegativeValues) {
@@ -96,11 +97,13 @@ function parseTimeExpression(
 
 export function copyObj(
     obj: {[key: string]: any}, destination: {[key: string]: any} = {}): {[key: string]: any} {
-  Object.keys(obj).forEach(prop => { destination[prop] = obj[prop]; });
+  Object.keys(obj).forEach(prop => {
+    destination[prop] = obj[prop];
+  });
   return destination;
 }
 
-export function normalizeStyles(styles: ɵStyleData | ɵStyleData[]): ɵStyleData {
+export function normalizeStyles(styles: ɵStyleData|ɵStyleData[]): ɵStyleData {
   const normalizedStyles: ɵStyleData = {};
   if (Array.isArray(styles)) {
     styles.forEach(data => copyStyles(data, false, normalizedStyles));
@@ -125,12 +128,50 @@ export function copyStyles(
   return destination;
 }
 
-export function setStyles(element: any, styles: ɵStyleData) {
+function getStyleAttributeString(element: any, key: string, value: string) {
+  // Return the key-value pair string to be added to the style attribute for the
+  // given CSS style key.
+  if (value) {
+    return key + ':' + value + ';';
+  } else {
+    return '';
+  }
+}
+
+function writeStyleAttribute(element: any) {
+  // Read the style property of the element and manually reflect it to the
+  // style attribute. This is needed because Domino on platform-server doesn't
+  // understand the full set of allowed CSS properties and doesn't reflect some
+  // of them automatically.
+  let styleAttrValue = '';
+  for (let i = 0; i < element.style.length; i++) {
+    const key = element.style.item(i);
+    styleAttrValue += getStyleAttributeString(element, key, element.style.getPropertyValue(key));
+  }
+  for (const key in element.style) {
+    // Skip internal Domino properties that don't need to be reflected.
+    if (!element.style.hasOwnProperty(key) || key.startsWith('_')) {
+      continue;
+    }
+    const dashKey = camelCaseToDashCase(key);
+    styleAttrValue += getStyleAttributeString(element, dashKey, element.style[key]);
+  }
+  element.setAttribute('style', styleAttrValue);
+}
+
+export function setStyles(element: any, styles: ɵStyleData, formerStyles?: {[key: string]: any}) {
   if (element['style']) {
     Object.keys(styles).forEach(prop => {
       const camelProp = dashCaseToCamelCase(prop);
+      if (formerStyles && !formerStyles.hasOwnProperty(prop)) {
+        formerStyles[prop] = element.style[camelProp];
+      }
       element.style[camelProp] = styles[prop];
     });
+    // On the server set the 'style' attribute since it's not automatically reflected.
+    if (isNode()) {
+      writeStyleAttribute(element);
+    }
   }
 }
 
@@ -140,11 +181,15 @@ export function eraseStyles(element: any, styles: ɵStyleData) {
       const camelProp = dashCaseToCamelCase(prop);
       element.style[camelProp] = '';
     });
+    // On the server set the 'style' attribute since it's not automatically reflected.
+    if (isNode()) {
+      writeStyleAttribute(element);
+    }
   }
 }
 
-export function normalizeAnimationEntry(steps: AnimationMetadata | AnimationMetadata[]):
-    AnimationMetadata {
+export function normalizeAnimationEntry(steps: AnimationMetadata|
+                                        AnimationMetadata[]): AnimationMetadata {
   if (Array.isArray(steps)) {
     if (steps.length == 1) return steps[0];
     return sequence(steps);
@@ -153,7 +198,7 @@ export function normalizeAnimationEntry(steps: AnimationMetadata | AnimationMeta
 }
 
 export function validateStyleParams(
-    value: string | number, options: AnimationOptions, errors: any[]) {
+    value: string|number, options: AnimationOptions, errors: any[]) {
   const params = options.params || {};
   const matches = extractStyleParams(value);
   if (matches.length) {
@@ -168,13 +213,11 @@ export function validateStyleParams(
 
 const PARAM_REGEX =
     new RegExp(`${SUBSTITUTION_EXPR_START}\\s*(.+?)\\s*${SUBSTITUTION_EXPR_END}`, 'g');
-export function extractStyleParams(value: string | number): string[] {
+export function extractStyleParams(value: string|number): string[] {
   let params: string[] = [];
   if (typeof value === 'string') {
-    const val = value.toString();
-
     let match: any;
-    while (match = PARAM_REGEX.exec(val)) {
+    while (match = PARAM_REGEX.exec(value)) {
       params.push(match[1] as string);
     }
     PARAM_REGEX.lastIndex = 0;
@@ -183,11 +226,11 @@ export function extractStyleParams(value: string | number): string[] {
 }
 
 export function interpolateParams(
-    value: string | number, params: {[name: string]: any}, errors: any[]): string|number {
+    value: string|number, params: {[name: string]: any}, errors: any[]): string|number {
   const original = value.toString();
   const str = original.replace(PARAM_REGEX, (_, varName) => {
     let localVal = params[varName];
-    // this means that the value was never overidden by the data passed in by the user
+    // this means that the value was never overridden by the data passed in by the user
     if (!params.hasOwnProperty(varName)) {
       errors.push(`Please provide a value for the animation param ${varName}`);
       localVal = '';
@@ -231,8 +274,38 @@ export function dashCaseToCamelCase(input: string): string {
   return input.replace(DASH_CASE_REGEXP, (...m: any[]) => m[1].toUpperCase());
 }
 
+function camelCaseToDashCase(input: string): string {
+  return input.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+}
+
 export function allowPreviousPlayerStylesMerge(duration: number, delay: number) {
   return duration === 0 || delay === 0;
+}
+
+export function balancePreviousStylesIntoKeyframes(
+    element: any, keyframes: {[key: string]: any}[], previousStyles: {[key: string]: any}) {
+  const previousStyleProps = Object.keys(previousStyles);
+  if (previousStyleProps.length && keyframes.length) {
+    let startingKeyframe = keyframes[0];
+    let missingStyleProps: string[] = [];
+    previousStyleProps.forEach(prop => {
+      if (!startingKeyframe.hasOwnProperty(prop)) {
+        missingStyleProps.push(prop);
+      }
+      startingKeyframe[prop] = previousStyles[prop];
+    });
+
+    if (missingStyleProps.length) {
+      // tslint:disable-next-line
+      for (var i = 1; i < keyframes.length; i++) {
+        let kf = keyframes[i];
+        missingStyleProps.forEach(function(prop) {
+          kf[prop] = computeStyle(element, prop);
+        });
+      }
+    }
+  }
+  return keyframes;
 }
 
 export function visitDslNode(
@@ -270,4 +343,8 @@ export function visitDslNode(visitor: any, node: any, context: any): any {
     default:
       throw new Error(`Unable to resolve animation metadata node #${node.type}`);
   }
+}
+
+export function computeStyle(element: any, prop: string): string {
+  return (<any>window.getComputedStyle(element))[prop];
 }

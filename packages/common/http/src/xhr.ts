@@ -1,14 +1,13 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
 import {Injectable} from '@angular/core';
-import {Observable} from 'rxjs/Observable';
-import {Observer} from 'rxjs/Observer';
+import {Observable, Observer} from 'rxjs';
 
 import {HttpBackend} from './backend';
 import {HttpHeaders} from './headers';
@@ -34,19 +33,22 @@ function getResponseUrl(xhr: any): string|null {
 /**
  * A wrapper around the `XMLHttpRequest` constructor.
  *
- * @stable
+ * @publicApi
  */
-export abstract class XhrFactory { abstract build(): XMLHttpRequest; }
+export abstract class XhrFactory {
+  abstract build(): XMLHttpRequest;
+}
 
 /**
- * A factory for @{link HttpXhrBackend} that uses the `XMLHttpRequest` browser API.
+ * A factory for `HttpXhrBackend` that uses the `XMLHttpRequest` browser API.
  *
- * @stable
  */
 @Injectable()
 export class BrowserXhr implements XhrFactory {
   constructor() {}
-  build(): any { return <any>(new XMLHttpRequest()); }
+  build(): any {
+    return <any>(new XMLHttpRequest());
+  }
 }
 
 /**
@@ -60,23 +62,27 @@ interface PartialResponse {
 }
 
 /**
- * An `HttpBackend` which uses the XMLHttpRequest API to send
- * requests to a backend server.
+ * Uses `XMLHttpRequest` to send requests to a backend server.
+ * @see `HttpHandler`
+ * @see `JsonpClientBackend`
  *
- * @stable
+ * @publicApi
  */
 @Injectable()
 export class HttpXhrBackend implements HttpBackend {
   constructor(private xhrFactory: XhrFactory) {}
 
   /**
-   * Process a request and return a stream of response events.
+   * Processes a request and returns a stream of response events.
+   * @param req The request object.
+   * @returns An observable of the response events.
    */
   handle(req: HttpRequest<any>): Observable<HttpEvent<any>> {
     // Quick check to give a better error message when a user attempts to use
-    // HttpClient.jsonp() without installing the JsonpClientModule
+    // HttpClient.jsonp() without installing the HttpClientJsonpModule
     if (req.method === 'JSONP') {
-      throw new Error(`Attempted to construct Jsonp request without JsonpClientModule installed.`);
+      throw new Error(
+          `Attempted to construct Jsonp request without HttpClientJsonpModule installed.`);
     }
 
     // Everything happens on Observable subscription.
@@ -135,7 +141,7 @@ export class HttpXhrBackend implements HttpBackend {
           return headerResponse;
         }
 
-        // Read status and normalize an IE9 bug (http://bugs.jquery.com/ticket/1450).
+        // Read status and normalize an IE9 bug (https://bugs.jquery.com/ticket/1450).
         const status: number = xhr.status === 1223 ? 204 : xhr.status;
         const statusText = xhr.statusText || 'OK';
 
@@ -199,7 +205,7 @@ export class HttpXhrBackend implements HttpBackend {
               // Even though the response status was 2xx, this is still an error.
               ok = false;
               // The parse error contains the text of the body that failed to parse.
-              body = { error, text: body } as HttpJsonParseError;
+              body = {error, text: body} as HttpJsonParseError;
             }
           }
         }
@@ -232,11 +238,13 @@ export class HttpXhrBackend implements HttpBackend {
       // The onError callback is called when something goes wrong at the network level.
       // Connection timeout, DNS error, offline, etc. These are actual errors, and are
       // transmitted on the error channel.
-      const onError = (error: ErrorEvent) => {
+      const onError = (error: ProgressEvent) => {
+        const {url} = partialFromXhr();
         const res = new HttpErrorResponse({
           error,
           status: xhr.status || 0,
           statusText: xhr.statusText || 'Unknown Error',
+          url: url || undefined,
         });
         observer.error(res);
       };
@@ -315,7 +323,7 @@ export class HttpXhrBackend implements HttpBackend {
       }
 
       // Fire the request, and notify the event stream that it was fired.
-      xhr.send(reqBody);
+      xhr.send(reqBody!);
       observer.next({type: HttpEventType.Sent});
 
       // This is the return from the Observable function, which is the
@@ -332,7 +340,9 @@ export class HttpXhrBackend implements HttpBackend {
         }
 
         // Finally, abort the in-flight request.
-        xhr.abort();
+        if (xhr.readyState !== xhr.DONE) {
+          xhr.abort();
+        }
       };
     });
   }

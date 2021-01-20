@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -9,19 +9,22 @@
 // THIS CODE IS GENERATED - DO NOT MODIFY
 // See angular/tools/gulp-tasks/cldr/extract.js
 
+const u = undefined;
+
+function plural(n: number): number {
+  return 5;
+}
+
 export default [
   'sah',
-  [
-    ['ЭИ', 'ЭК'],
-    ,
-  ],
-  ,
+  [['ЭИ', 'ЭК'], u, u],
+  u,
   [
     ['Б', 'Б', 'О', 'С', 'Ч', 'Б', 'С'], ['бс', 'бн', 'оп', 'сэ', 'чп', 'бэ', 'сб'],
     ['баскыһыанньа', 'бэнидиэнньик', 'оптуорунньук', 'сэрэдэ', 'чэппиэр', 'Бээтиҥсэ', 'субуота'],
     ['бс', 'бн', 'оп', 'сэ', 'чп', 'бэ', 'сб']
   ],
-  ,
+  u,
   [
     ['Т', 'О', 'К', 'М', 'Ы', 'Б', 'О', 'А', 'Б', 'А', 'С', 'А'],
     ['Тохс', 'Олун', 'Клн', 'Мсу', 'Ыам', 'Бэс', 'Отй', 'Атр', 'Блҕ', 'Алт', 'Сэт', 'Ахс'],
@@ -38,18 +41,18 @@ export default [
       'атырдьых ыйа', 'балаҕан ыйа', 'алтынньы', 'сэтинньи', 'ахсынньы'
     ]
   ],
-  [
-    ['б. э. и.', 'б. э'],
-    ,
-  ],
-  1, [6, 0], ['yy/M/d', 'y, MMM d', 'y, MMMM d', 'y \'сыл\' MMMM d \'күнэ\', EEEE'],
+  [['б. э. и.', 'б. э'], u, u],
+  1,
+  [6, 0],
+  ['yy/M/d', 'y, MMM d', 'y, MMMM d', 'y \'сыл\' MMMM d \'күнэ\', EEEE'],
   ['HH:mm', 'HH:mm:ss', 'HH:mm:ss z', 'HH:mm:ss zzzz'],
-  [
-    '{1} {0}',
-    ,
-    ,
-  ],
+  ['{1} {0}', u, u, u],
   [',', ' ', ';', '%', '+', '-', 'E', '×', '‰', '∞', 'чыыһыла буотах', ':'],
-  ['#,##0.###', '#,##0%', '#,##0.00 ¤', '#E0'], '₽', 'Арассыыйа солкуобайа',
-  function(n: number): number { return 5;}
+  ['#,##0.###', '#,##0%', '#,##0.00 ¤', '#E0'],
+  'RUB',
+  '₽',
+  'Арассыыйа солкуобайа',
+  {'JPY': ['JP¥', '¥'], 'RUB': ['₽'], 'USD': ['US$', '$']},
+  'ltr',
+  plural
 ];

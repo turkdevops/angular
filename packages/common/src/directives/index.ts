@@ -1,13 +1,12 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
 import {Provider} from '@angular/core';
-
 import {NgClass} from './ng_class';
 import {NgComponentOutlet} from './ng_component_outlet';
 import {NgForOf, NgForOfContext} from './ng_for_of';
@@ -30,7 +29,7 @@ export {
   NgSwitch,
   NgSwitchCase,
   NgSwitchDefault,
-  NgTemplateOutlet
+  NgTemplateOutlet,
 };
 
 

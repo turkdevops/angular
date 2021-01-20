@@ -1,58 +1,71 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {isPlatformBrowser} from '@angular/common';
-import {Inject, Injectable, PLATFORM_ID} from '@angular/core';
-import {BehaviorSubject} from 'rxjs/BehaviorSubject';
-import {Observable} from 'rxjs/Observable';
-import {ConnectableObservable} from 'rxjs/observable/ConnectableObservable';
-import {concat as obs_concat} from 'rxjs/observable/concat';
-import {defer as obs_defer} from 'rxjs/observable/defer';
-import {fromEvent as obs_fromEvent} from 'rxjs/observable/fromEvent';
-import {of as obs_of} from 'rxjs/observable/of';
-import {_throw as obs_throw} from 'rxjs/observable/throw';
-import {_do as op_do} from 'rxjs/operator/do';
-import {filter as op_filter} from 'rxjs/operator/filter';
-import {map as op_map} from 'rxjs/operator/map';
-import {publish as op_publish} from 'rxjs/operator/publish';
-import {startWith as op_startWith} from 'rxjs/operator/startWith';
-import {switchMap as op_switchMap} from 'rxjs/operator/switchMap';
-import {take as op_take} from 'rxjs/operator/take';
-import {toPromise as op_toPromise} from 'rxjs/operator/toPromise';
+import {concat, ConnectableObservable, defer, fromEvent, Observable, of, throwError} from 'rxjs';
+import {filter, map, publish, switchMap, take, tap} from 'rxjs/operators';
 
 export const ERR_SW_NOT_SUPPORTED = 'Service workers are disabled or not supported by this browser';
 
-export interface Version {
-  hash: string;
-  appData?: Object;
-}
-
 /**
- * @experimental
+ * An event emitted when a new version of the app is available.
+ *
+ * @see {@link guide/service-worker-communications Service worker communication guide}
+ *
+ * @publicApi
  */
 export interface UpdateAvailableEvent {
   type: 'UPDATE_AVAILABLE';
-  current: Version;
-  available: Version;
+  current: {hash: string, appData?: Object};
+  available: {hash: string, appData?: Object};
 }
 
 /**
- * @experimental
+ * An event emitted when a new version of the app has been downloaded and activated.
+ *
+ * @see {@link guide/service-worker-communications Service worker communication guide}
+ *
+ * @publicApi
  */
 export interface UpdateActivatedEvent {
   type: 'UPDATE_ACTIVATED';
-  previous?: Version;
-  current: Version;
+  previous?: {hash: string, appData?: Object};
+  current: {hash: string, appData?: Object};
 }
 
-export type IncomingEvent = UpdateAvailableEvent | UpdateActivatedEvent;
+/**
+ * An event emitted when the version of the app used by the service worker to serve this client is
+ * in a broken state that cannot be recovered from and a full page reload is required.
+ *
+ * For example, the service worker may not be able to retrieve a required resource, neither from the
+ * cache nor from the server. This could happen if a new version is deployed to the server and the
+ * service worker cache has been partially cleaned by the browser, removing some files of a previous
+ * app version but not all.
+ *
+ * @see {@link guide/service-worker-communications Service worker communication guide}
+ *
+ * @publicApi
+ */
+export interface UnrecoverableStateEvent {
+  type: 'UNRECOVERABLE_STATE';
+  reason: string;
+}
 
-interface TypedEvent {
+/**
+ * An event emitted when a `PushEvent` is received by the service worker.
+ */
+export interface PushEvent {
+  type: 'PUSH';
+  data: any;
+}
+
+export type IncomingEvent = UpdateAvailableEvent|UpdateActivatedEvent|UnrecoverableStateEvent;
+
+export interface TypedEvent {
   type: string;
 }
 
@@ -65,121 +78,86 @@ interface StatusEvent {
 
 
 function errorObservable(message: string): Observable<any> {
-  return obs_defer(() => obs_throw(new Error(message)));
+  return defer(() => throwError(new Error(message)));
 }
 
 /**
- * @experimental
-*/
+ * @publicApi
+ */
 export class NgswCommChannel {
-  /**
-   * @internal
-   */
   readonly worker: Observable<ServiceWorker>;
 
-  /**
-   * @internal
-   */
   readonly registration: Observable<ServiceWorkerRegistration>;
 
-  /**
-   * @internal
-   */
-  readonly events: Observable<IncomingEvent>;
+  readonly events: Observable<TypedEvent>;
 
-  constructor(
-      private serviceWorker: ServiceWorkerContainer|undefined,
-      @Inject(PLATFORM_ID) platformId: string) {
-    if (!serviceWorker || !isPlatformBrowser(platformId)) {
-      this.serviceWorker = undefined;
+  constructor(private serviceWorker: ServiceWorkerContainer|undefined) {
+    if (!serviceWorker) {
       this.worker = this.events = this.registration = errorObservable(ERR_SW_NOT_SUPPORTED);
     } else {
-      const controllerChangeEvents =
-          <Observable<any>>(obs_fromEvent(serviceWorker, 'controllerchange'));
-      const controllerChanges = <Observable<ServiceWorker|null>>(
-          op_map.call(controllerChangeEvents, () => serviceWorker.controller));
+      const controllerChangeEvents = fromEvent(serviceWorker, 'controllerchange');
+      const controllerChanges = controllerChangeEvents.pipe(map(() => serviceWorker.controller));
+      const currentController = defer(() => of(serviceWorker.controller));
+      const controllerWithChanges = concat(currentController, controllerChanges);
 
-      const currentController =
-          <Observable<ServiceWorker|null>>(obs_defer(() => obs_of(serviceWorker.controller)));
-
-      const controllerWithChanges =
-          <Observable<ServiceWorker|null>>(obs_concat(currentController, controllerChanges));
-      this.worker = <Observable<ServiceWorker>>(
-          op_filter.call(controllerWithChanges, (c: ServiceWorker) => !!c));
+      this.worker = controllerWithChanges.pipe(filter((c): c is ServiceWorker => !!c));
 
       this.registration = <Observable<ServiceWorkerRegistration>>(
-          op_switchMap.call(this.worker, () => serviceWorker.getRegistration()));
+          this.worker.pipe(switchMap(() => serviceWorker.getRegistration())));
 
-      const rawEvents = obs_fromEvent(serviceWorker, 'message');
-
-      const rawEventPayload =
-          <Observable<Object>>(op_map.call(rawEvents, (event: MessageEvent) => event.data));
-      const eventsUnconnected = <Observable<IncomingEvent>>(
-          op_filter.call(rawEventPayload, (event: Object) => !!event && !!(event as any)['type']));
-      const events = <ConnectableObservable<IncomingEvent>>(op_publish.call(eventsUnconnected));
-      this.events = events;
+      const rawEvents = fromEvent<MessageEvent>(serviceWorker, 'message');
+      const rawEventPayload = rawEvents.pipe(map(event => event.data));
+      const eventsUnconnected = rawEventPayload.pipe(filter(event => event && event.type));
+      const events = eventsUnconnected.pipe(publish()) as ConnectableObservable<IncomingEvent>;
       events.connect();
+
+      this.events = events;
     }
   }
 
-  /**
-   * @internal
-   */
   postMessage(action: string, payload: Object): Promise<void> {
-    const worker = op_take.call(this.worker, 1);
-    const sideEffect = op_do.call(worker, (sw: ServiceWorker) => {
-      sw.postMessage({
-          action, ...payload,
-      });
-    });
-    return <Promise<void>>(op_toPromise.call(sideEffect).then(() => undefined));
+    return this.worker
+        .pipe(take(1), tap((sw: ServiceWorker) => {
+                sw.postMessage({
+                  action,
+                  ...payload,
+                });
+              }))
+        .toPromise()
+        .then(() => undefined);
   }
 
-  /**
-   * @internal
-   */
   postMessageWithStatus(type: string, payload: Object, nonce: number): Promise<void> {
     const waitForStatus = this.waitForStatus(nonce);
     const postMessage = this.postMessage(type, payload);
     return Promise.all([waitForStatus, postMessage]).then(() => undefined);
   }
 
-  /**
-   * @internal
-   */
-  generateNonce(): number { return Math.round(Math.random() * 10000000); }
-
-  /**
-   * @internal
-   */
-  eventsOfType<T>(type: string): Observable<T> {
-    return <Observable<T>>(
-        op_filter.call(this.events, (event: T & TypedEvent) => { return event.type === type; }));
+  generateNonce(): number {
+    return Math.round(Math.random() * 10000000);
   }
 
-  /**
-   * @internal
-   */
-  nextEventOfType<T>(type: string): Observable<T> {
-    return <Observable<T>>(op_take.call(this.eventsOfType(type), 1));
+  eventsOfType<T extends TypedEvent>(type: T['type']): Observable<T> {
+    const filterFn = (event: TypedEvent): event is T => event.type === type;
+    return this.events.pipe(filter(filterFn));
   }
 
-  /**
-   * @internal
-   */
+  nextEventOfType<T extends TypedEvent>(type: T['type']): Observable<T> {
+    return this.eventsOfType(type).pipe(take(1));
+  }
+
   waitForStatus(nonce: number): Promise<void> {
-    const statusEventsWithNonce = <Observable<StatusEvent>>(
-        op_filter.call(this.eventsOfType('STATUS'), (event: StatusEvent) => event.nonce === nonce));
-    const singleStatusEvent = <Observable<StatusEvent>>(op_take.call(statusEventsWithNonce, 1));
-    const mapErrorAndValue =
-        <Observable<void>>(op_map.call(singleStatusEvent, (event: StatusEvent) => {
-          if (event.status) {
-            return undefined;
-          }
-          throw new Error(event.error !);
-        }));
-    return op_toPromise.call(mapErrorAndValue);
+    return this.eventsOfType<StatusEvent>('STATUS')
+        .pipe(filter(event => event.nonce === nonce), take(1), map(event => {
+                if (event.status) {
+                  return undefined;
+                }
+                throw new Error(event.error!);
+              }))
+        .toPromise();
   }
 
-  get isEnabled(): boolean { return !!this.serviceWorker; }
+  get isEnabled(): boolean {
+    return !!this.serviceWorker;
+  }
 }

@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -11,7 +11,7 @@ import * as ts from 'typescript';
 import {isMetadataGlobalReferenceExpression} from '../../src/metadata/schema';
 import {Symbols} from '../../src/metadata/symbols';
 
-import {Directory, Host, expectNoDiagnostics} from './typescript.mocks';
+import {Directory, expectNoDiagnostics, Host} from './typescript.mocks';
 
 describe('Symbols', () => {
   let symbols: Symbols;
@@ -42,9 +42,9 @@ describe('Symbols', () => {
   beforeEach(() => {
     host = new Host(FILES, ['consts.ts', 'expressions.ts', 'imports.ts']);
     service = ts.createLanguageService(host);
-    program = service.getProgram();
-    expressions = program.getSourceFile('expressions.ts');
-    imports = program.getSourceFile('imports.ts');
+    program = service.getProgram()!;
+    expressions = program.getSourceFile('expressions.ts')!;
+    imports = program.getSourceFile('imports.ts')!;
   });
 
   it('should not have syntax errors in the test sources', () => {
@@ -91,7 +91,8 @@ describe('Symbols', () => {
   });
 
   it('should be able to resolve any symbol in core global scope', () => {
-    const core = program.getSourceFiles().find(source => source.fileName.endsWith('lib.d.ts'));
+    const core = (program.getSourceFiles() as ts.SourceFile[])
+                     .find(source => source.fileName.endsWith('lib.d.ts'));
     expect(core).toBeDefined();
     const visit = (node: ts.Node): boolean => {
       switch (node.kind) {
@@ -110,7 +111,7 @@ describe('Symbols', () => {
       }
       return false;
     };
-    ts.forEachChild(core !, visit);
+    ts.forEachChild(core!, visit);
   });
 });
 

@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -240,6 +240,13 @@ const _ATTR_TO_PROP: {[name: string]: string} = {
   'tabindex': 'tabIndex',
 };
 
+// Invert _ATTR_TO_PROP.
+const _PROP_TO_ATTR: {[name: string]: string} =
+    Object.keys(_ATTR_TO_PROP).reduce((inverted, attr) => {
+      inverted[_ATTR_TO_PROP[attr]] = attr;
+      return inverted;
+    }, {} as {[prop: string]: string});
+
 export class DomElementSchemaRegistry extends ElementSchemaRegistry {
   private _schema: {[element: string]: {[property: string]: string}} = {};
 
@@ -253,7 +260,9 @@ export class DomElementSchemaRegistry extends ElementSchemaRegistry {
       typeNames.split(',').forEach(tag => this._schema[tag.toLowerCase()] = type);
       const superType = superName && this._schema[superName.toLowerCase()];
       if (superType) {
-        Object.keys(superType).forEach((prop: string) => { type[prop] = superType[prop]; });
+        Object.keys(superType).forEach((prop: string) => {
+          type[prop] = superType[prop];
+        });
       }
       properties.forEach((property: string) => {
         if (property.length > 0) {
@@ -328,9 +337,9 @@ export class DomElementSchemaRegistry extends ElementSchemaRegistry {
    * Tag and property name are statically known and cannot change at runtime, i.e. it is not
    * possible to bind a value into a changing attribute or tag name.
    *
-   * The filtering is white list based. All attributes in the schema above are assumed to have the
-   * 'NONE' security context, i.e. that they are safe inert string values. Only specific well known
-   * attack vectors are assigned their appropriate context.
+   * The filtering is based on a list of allowed tags|attributes. All attributes in the schema
+   * above are assumed to have the 'NONE' security context, i.e. that they are safe inert
+   * string values. Only specific well known attack vectors are assigned their appropriate context.
    */
   securityContext(tagName: string, propName: string, isAttribute: boolean): SecurityContext {
     if (isAttribute) {
@@ -342,17 +351,21 @@ export class DomElementSchemaRegistry extends ElementSchemaRegistry {
     // property names do not have a security impact.
     tagName = tagName.toLowerCase();
     propName = propName.toLowerCase();
-    let ctx = SECURITY_SCHEMA[tagName + '|' + propName];
+    let ctx = SECURITY_SCHEMA()[tagName + '|' + propName];
     if (ctx) {
       return ctx;
     }
-    ctx = SECURITY_SCHEMA['*|' + propName];
+    ctx = SECURITY_SCHEMA()['*|' + propName];
     return ctx ? ctx : SecurityContext.NONE;
   }
 
-  getMappedPropName(propName: string): string { return _ATTR_TO_PROP[propName] || propName; }
+  getMappedPropName(propName: string): string {
+    return _ATTR_TO_PROP[propName] || propName;
+  }
 
-  getDefaultComponentElementName(): string { return 'ng-component'; }
+  getDefaultComponentElementName(): string {
+    return 'ng-component';
+  }
 
   validateProperty(name: string): {error: boolean, msg?: string} {
     if (name.toLowerCase().startsWith('on')) {
@@ -376,7 +389,15 @@ export class DomElementSchemaRegistry extends ElementSchemaRegistry {
     }
   }
 
-  allKnownElementNames(): string[] { return Object.keys(this._schema); }
+  allKnownElementNames(): string[] {
+    return Object.keys(this._schema);
+  }
+
+  allKnownAttributesOfElement(tagName: string): string[] {
+    const elementProperties = this._schema[tagName.toLowerCase()] || this._schema['unknown'];
+    // Convert properties to attributes.
+    return Object.keys(elementProperties).map(prop => _PROP_TO_ATTR[prop] ?? prop);
+  }
 
   normalizeAnimationStyleProperty(propName: string): string {
     return dashCaseToCamelCase(propName);
@@ -386,7 +407,7 @@ export class DomElementSchemaRegistry extends ElementSchemaRegistry {
       {error: string, value: string} {
     let unit: string = '';
     const strVal = val.toString().trim();
-    let errorMsg: string = null !;
+    let errorMsg: string = null!;
 
     if (_isPixelDimensionStyle(camelCaseProp) && val !== 0 && val !== '0') {
       if (typeof val === 'number') {

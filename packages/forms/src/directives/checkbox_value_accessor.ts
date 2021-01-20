@@ -1,12 +1,12 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {Directive, ElementRef, Renderer2, forwardRef} from '@angular/core';
+import {Directive, ElementRef, forwardRef, Renderer2} from '@angular/core';
 
 import {ControlValueAccessor, NG_VALUE_ACCESSOR} from './control_value_accessor';
 
@@ -17,14 +17,27 @@ export const CHECKBOX_VALUE_ACCESSOR: any = {
 };
 
 /**
- * The accessor for writing a value and listening to changes on a checkbox input element.
+ * @description
+ * A `ControlValueAccessor` for writing a value and listening to changes on a checkbox input
+ * element.
  *
- *  ### Example
- *  ```
- *  <input type="checkbox" name="rememberLogin" ngModel>
- *  ```
+ * @usageNotes
  *
- *  @stable
+ * ### Using a checkbox with a reactive form.
+ *
+ * The following example shows how to use a checkbox with a reactive form.
+ *
+ * ```ts
+ * const rememberLoginControl = new FormControl();
+ * ```
+ *
+ * ```
+ * <input type="checkbox" [formControl]="rememberLoginControl">
+ * ```
+ *
+ * @ngModule ReactiveFormsModule
+ * @ngModule FormsModule
+ * @publicApi
  */
 @Directive({
   selector:
@@ -33,17 +46,48 @@ export const CHECKBOX_VALUE_ACCESSOR: any = {
   providers: [CHECKBOX_VALUE_ACCESSOR]
 })
 export class CheckboxControlValueAccessor implements ControlValueAccessor {
+  /**
+   * The registered callback function called when a change event occurs on the input element.
+   * @nodoc
+   */
   onChange = (_: any) => {};
+
+  /**
+   * The registered callback function called when a blur event occurs on the input element.
+   * @nodoc
+   */
   onTouched = () => {};
 
   constructor(private _renderer: Renderer2, private _elementRef: ElementRef) {}
 
+  /**
+   * Sets the "checked" property on the input element.
+   * @nodoc
+   */
   writeValue(value: any): void {
     this._renderer.setProperty(this._elementRef.nativeElement, 'checked', value);
   }
-  registerOnChange(fn: (_: any) => {}): void { this.onChange = fn; }
-  registerOnTouched(fn: () => {}): void { this.onTouched = fn; }
 
+  /**
+   * Registers a function called when the control value changes.
+   * @nodoc
+   */
+  registerOnChange(fn: (_: any) => {}): void {
+    this.onChange = fn;
+  }
+
+  /**
+   * Registers a function called when the control is touched.
+   * @nodoc
+   */
+  registerOnTouched(fn: () => {}): void {
+    this.onTouched = fn;
+  }
+
+  /**
+   * Sets the "disabled" property on the input element.
+   * @nodoc
+   */
   setDisabledState(isDisabled: boolean): void {
     this._renderer.setProperty(this._elementRef.nativeElement, 'disabled', isDisabled);
   }

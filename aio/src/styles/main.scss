@@ -1,5 +1,4 @@
 // import global themes
-@import '~@angular/material/theming';
 @import './ng-io-theme';
 
 // import global variables
@@ -12,3 +11,6 @@
 @import './0-base/base-dir';
 @import './1-layouts/layouts-dir';
 @import './2-modules/modules-dir';
+
+// import print styles
+@import './print';

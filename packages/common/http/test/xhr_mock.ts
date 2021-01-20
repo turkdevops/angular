@@ -1,18 +1,21 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {HttpHeaders} from '../src/headers';
-import {XhrFactory} from '../src/xhr';
+import {HttpHeaders} from '@angular/common/http/src/headers';
+import {XhrFactory} from '@angular/common/http/src/xhr';
 
 export class MockXhrFactory implements XhrFactory {
-  mock: MockXMLHttpRequest;
+  // TODO(issue/24571): remove '!'.
+  mock!: MockXMLHttpRequest;
 
-  build(): XMLHttpRequest { return (this.mock = new MockXMLHttpRequest()) as any; }
+  build(): XMLHttpRequest {
+    return (this.mock = new MockXMLHttpRequest()) as any;
+  }
 }
 
 export class MockXMLHttpRequestUpload {
@@ -30,8 +33,10 @@ export class MockXMLHttpRequestUpload {
 export class MockXMLHttpRequest {
   // Set by method calls.
   body: any;
-  method: string;
-  url: string;
+  // TODO(issue/24571): remove '!'.
+  method!: string;
+  // TODO(issue/24571): remove '!'.
+  url!: string;
   mockHeaders: {[key: string]: string} = {};
   mockAborted: boolean = false;
 
@@ -61,7 +66,9 @@ export class MockXMLHttpRequest {
     this.url = url;
   }
 
-  send(body: any): void { this.body = body; }
+  send(body: any): void {
+    this.body = body;
+  }
 
   addEventListener(event: 'error'|'load'|'progress'|'uploadProgress', handler: Function): void {
     this.listeners[event] = handler as any;
@@ -71,9 +78,13 @@ export class MockXMLHttpRequest {
     delete this.listeners[event];
   }
 
-  setRequestHeader(name: string, value: string): void { this.mockHeaders[name] = value; }
+  setRequestHeader(name: string, value: string): void {
+    this.mockHeaders[name] = value;
+  }
 
-  getAllResponseHeaders(): string { return this.mockResponseHeaders; }
+  getAllResponseHeaders(): string {
+    return this.mockResponseHeaders;
+  }
 
   getResponseHeader(header: string): string|null {
     return new HttpHeaders(this.mockResponseHeaders).get(header);
@@ -92,14 +103,17 @@ export class MockXMLHttpRequest {
 
   mockDownloadProgressEvent(loaded: number, total?: number): void {
     if (this.listeners.progress) {
-      this.listeners.progress({ lengthComputable: total !== undefined, loaded, total } as any);
+      this.listeners.progress({lengthComputable: total !== undefined, loaded, total} as any);
     }
   }
 
   mockUploadProgressEvent(loaded: number, total?: number) {
     if (this.listeners.uploadProgress) {
-      this.listeners.uploadProgress(
-          { lengthComputable: total !== undefined, loaded, total, } as any);
+      this.listeners.uploadProgress({
+        lengthComputable: total !== undefined,
+        loaded,
+        total,
+      } as any);
     }
   }
 
@@ -115,5 +129,7 @@ export class MockXMLHttpRequest {
     }
   }
 
-  abort() { this.mockAborted = true; }
+  abort() {
+    this.mockAborted = true;
+  }
 }

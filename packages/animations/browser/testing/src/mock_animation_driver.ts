@@ -1,30 +1,31 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
-import {AUTO_STYLE, AnimationPlayer, NoopAnimationPlayer, ɵStyleData} from '@angular/animations';
-
-import {AnimationDriver} from '../../src/render/animation_driver';
-import {containsElement, invokeQuery, matchesElement, validateStyleProperty} from '../../src/render/shared';
-import {allowPreviousPlayerStylesMerge} from '../../src/util';
+import {AnimationPlayer, AUTO_STYLE, NoopAnimationPlayer, ɵStyleData} from '@angular/animations';
+import {AnimationDriver, ɵallowPreviousPlayerStylesMerge as allowPreviousPlayerStylesMerge, ɵcontainsElement as containsElement, ɵinvokeQuery as invokeQuery, ɵmatchesElement as matchesElement, ɵvalidateStyleProperty as validateStyleProperty} from '@angular/animations/browser';
 
 
 /**
- * @experimental Animation support is experimental.
+ * @publicApi
  */
 export class MockAnimationDriver implements AnimationDriver {
   static log: AnimationPlayer[] = [];
 
-  validateStyleProperty(prop: string): boolean { return validateStyleProperty(prop); }
+  validateStyleProperty(prop: string): boolean {
+    return validateStyleProperty(prop);
+  }
 
   matchesElement(element: any, selector: string): boolean {
     return matchesElement(element, selector);
   }
 
-  containsElement(elm1: any, elm2: any): boolean { return containsElement(elm1, elm2); }
+  containsElement(elm1: any, elm2: any): boolean {
+    return containsElement(elm1, elm2);
+  }
 
   query(element: any, selector: string, multi: boolean): any[] {
     return invokeQuery(element, selector, multi);
@@ -35,7 +36,7 @@ export class MockAnimationDriver implements AnimationDriver {
   }
 
   animate(
-      element: any, keyframes: {[key: string]: string | number}[], duration: number, delay: number,
+      element: any, keyframes: {[key: string]: string|number}[], duration: number, delay: number,
       easing: string, previousPlayers: any[] = []): MockAnimationPlayer {
     const player =
         new MockAnimationPlayer(element, keyframes, duration, delay, easing, previousPlayers);
@@ -45,20 +46,20 @@ export class MockAnimationDriver implements AnimationDriver {
 }
 
 /**
- * @experimental Animation support is experimental.
+ * @publicApi
  */
 export class MockAnimationPlayer extends NoopAnimationPlayer {
   private __finished = false;
   private __started = false;
-  public previousStyles: {[key: string]: string | number} = {};
+  public previousStyles: {[key: string]: string|number} = {};
   private _onInitFns: (() => any)[] = [];
   public currentSnapshot: ɵStyleData = {};
 
   constructor(
-      public element: any, public keyframes: {[key: string]: string | number}[],
+      public element: any, public keyframes: {[key: string]: string|number}[],
       public duration: number, public delay: number, public easing: string,
       public previousPlayers: any[]) {
-    super();
+    super(duration, delay);
 
     if (allowPreviousPlayerStylesMerge(duration, delay)) {
       previousPlayers.forEach(player => {
@@ -68,12 +69,12 @@ export class MockAnimationPlayer extends NoopAnimationPlayer {
         }
       });
     }
-
-    this.totalTime = delay + duration;
   }
 
   /* @internal */
-  onInit(fn: () => any) { this._onInitFns.push(fn); }
+  onInit(fn: () => any) {
+    this._onInitFns.push(fn);
+  }
 
   /* @internal */
   init() {
@@ -100,7 +101,9 @@ export class MockAnimationPlayer extends NoopAnimationPlayer {
     this.__started = true;
   }
 
-  hasStarted() { return this.__started; }
+  hasStarted() {
+    return this.__started;
+  }
 
   beforeDestroy() {
     const captures: ɵStyleData = {};

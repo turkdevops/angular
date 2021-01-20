@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -11,17 +11,17 @@ import {describe, expect, it} from '@angular/core/testing/src/testing_internal';
 
 import {ConsoleReporter, Injector, MeasureValues, SampleDescription} from '../../index';
 
-export function main() {
+{
   describe('console reporter', () => {
     let reporter: ConsoleReporter;
     let log: string[];
 
     function createReporter(
         {columnWidth = null, sampleId = null, descriptions = null, metrics = null}: {
-          columnWidth?: number,
-          sampleId?: string,
-          descriptions?: {[key: string]: any}[],
-          metrics?: {[key: string]: any}
+          columnWidth?: number|null,
+          sampleId?: string|null,
+          descriptions?: {[key: string]: any}[]|null,
+          metrics?: {[key: string]: any}|null
         }) {
       log = [];
       if (!descriptions) {
@@ -33,7 +33,7 @@ export function main() {
       const providers: StaticProvider[] = [
         ConsoleReporter.PROVIDERS, {
           provide: SampleDescription,
-          useValue: new SampleDescription(sampleId, descriptions, metrics !)
+          useValue: new SampleDescription(sampleId, descriptions, metrics!)
         },
         {provide: ConsoleReporter.PRINT, useValue: (line: string) => log.push(line)}
       ];
@@ -84,7 +84,6 @@ export function main() {
       reporter.reportSample([], [mv(0, 0, {'a': 3, 'b': 0}), mv(1, 1, {'a': 5, 'b': 0})]);
       expect(log).toEqual(['======== | ========', '4.00+-25% |     0.00']);
     });
-
   });
 }
 

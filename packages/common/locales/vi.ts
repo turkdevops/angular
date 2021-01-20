@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -9,23 +9,23 @@
 // THIS CODE IS GENERATED - DO NOT MODIFY
 // See angular/tools/gulp-tasks/cldr/extract.js
 
+const u = undefined;
+
+function plural(n: number): number {
+  return 5;
+}
+
 export default [
   'vi',
-  [
-    ['s', 'c'],
-    ['SA', 'CH'],
-  ],
-  [
-    ['SA', 'CH'],
-    ,
-  ],
+  [['s', 'c'], ['SA', 'CH'], u],
+  [['SA', 'CH'], u, u],
   [
     ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'],
     ['CN', 'Th 2', 'Th 3', 'Th 4', 'Th 5', 'Th 6', 'Th 7'],
     ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'],
     ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
   ],
-  ,
+  u,
   [
     ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
     [
@@ -48,18 +48,25 @@ export default [
       'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'
     ]
   ],
-  [
-    ['tr. CN', 'sau CN'],
-    ['Trước CN', 'sau CN'],
-  ],
-  1, [6, 0], ['dd/MM/y', 'd MMM, y', 'd MMMM, y', 'EEEE, d MMMM, y'],
+  [['tr. CN', 'sau CN'], ['Trước CN', 'sau CN'], u],
+  1,
+  [6, 0],
+  ['dd/MM/y', 'd MMM, y', 'd MMMM, y', 'EEEE, d MMMM, y'],
   ['HH:mm', 'HH:mm:ss', 'HH:mm:ss z', 'HH:mm:ss zzzz'],
-  [
-    '{0}, {1}',
-    ,
-    '{0} {1}',
-  ],
+  ['{0}, {1}', u, '{0} {1}', u],
   [',', '.', ';', '%', '+', '-', 'E', '×', '‰', '∞', 'NaN', ':'],
-  ['#,##0.###', '#,##0%', '#,##0.00 ¤', '#E0'], '₫', 'Đồng Việt Nam',
-  function(n: number): number { return 5;}
+  ['#,##0.###', '#,##0%', '#,##0.00 ¤', '#E0'],
+  'VND',
+  '₫',
+  'Đồng Việt Nam',
+  {
+    'AUD': ['AU$', '$'],
+    'JPY': ['JP¥', '¥'],
+    'THB': ['฿'],
+    'TWD': ['NT$'],
+    'USD': ['US$', '$'],
+    'XXX': []
+  },
+  'ltr',
+  plural
 ];

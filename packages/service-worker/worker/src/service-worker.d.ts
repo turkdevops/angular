@@ -1,3 +1,4 @@
+// tslint:disable:file-header
 /**
  * Copyright (c) 2016, Tiernan Cridland
  *
@@ -23,33 +24,6 @@
  */
 interface ExtendableEvent extends Event {
   waitUntil(fn: Promise<any>): void;
-}
-
-// CacheStorage API
-
-interface Cache {
-  add(request: Request): Promise<void>;
-  addAll(requestArray: Array<Request>): Promise<void>;
-  'delete'(request: Request, options?: CacheStorageOptions): Promise<boolean>;
-  keys(request?: Request, options?: CacheStorageOptions): Promise<Array<string>>;
-  match(request: Request, options?: CacheStorageOptions): Promise<Response|undefined>;
-  matchAll(request: Request, options?: CacheStorageOptions): Promise<Array<Response>>;
-  put(request: Request|string, response: Response): Promise<void>;
-}
-
-interface CacheStorage {
-  'delete'(cacheName: string): Promise<boolean>;
-  has(cacheName: string): Promise<boolean>;
-  keys(): Promise<Array<string>>;
-  match(request: Request, options?: CacheStorageOptions): Promise<Response|undefined>;
-  open(cacheName: string): Promise<Cache>;
-}
-
-interface CacheStorageOptions {
-  cacheName?: string;
-  ignoreMethod?: boolean;
-  ignoreSearch?: boolean;
-  ignoreVary?: boolean;
 }
 
 // Client API
@@ -79,9 +53,9 @@ interface WindowClient {
   navigate(url: string): Promise<WindowClient>;
 }
 
-type ClientFrameType = 'auxiliary' | 'top-level' | 'nested' | 'none';
-type ClientMatchTypes = 'window' | 'worker' | 'sharedworker' | 'all';
-type WindowClientState = 'hidden' | 'visible' | 'prerender' | 'unloaded';
+type ClientFrameType = 'auxiliary'|'top-level'|'nested'|'none';
+type ClientMatchTypes = 'window'|'worker'|'sharedworker'|'all';
+type WindowClientState = 'hidden'|'visible'|'prerender'|'unloaded';
 
 // Fetch API
 
@@ -99,7 +73,7 @@ interface ActivateEvent extends ExtendableEvent {}
 
 // Notification API
 
-interface NotificationEvent {
+interface NotificationEvent extends ExtendableEvent {
   action: string;
   notification: Notification;
 }
@@ -141,6 +115,7 @@ interface ServiceWorkerGlobalScope {
   addEventListener(event: 'fetch', fn: (event?: FetchEvent) => any): void;
   addEventListener(event: 'install', fn: (event?: ExtendableEvent) => any): void;
   addEventListener(event: 'push', fn: (event?: PushEvent) => any): void;
+  addEventListener(event: 'notificationclick', fn: (event?: NotificationEvent) => any): void;
   addEventListener(event: 'sync', fn: (event?: SyncEvent) => any): void;
 
   fetch(request: Request|string): Promise<Response>;

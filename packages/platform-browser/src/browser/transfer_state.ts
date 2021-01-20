@@ -1,13 +1,13 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
+import {DOCUMENT} from '@angular/common';
 import {APP_ID, Injectable, NgModule} from '@angular/core';
-import {DOCUMENT} from '../dom/dom_tokens';
 
 export function escapeHtml(text: string): string {
   const escapedText: {[k: string]: string} = {
@@ -43,9 +43,9 @@ export function unescapeHtml(text: string): string {
  * transferState.set(COUNTER_KEY, value);
  * ```
  *
- * @experimental
+ * @publicApi
  */
-export type StateKey<T> = string & {__not_a_string: never};
+export type StateKey<T> = string&{__not_a_string: never};
 
 /**
  * Create a `StateKey<T>` that can be used to store value of type T with `TransferState`.
@@ -59,7 +59,7 @@ export type StateKey<T> = string & {__not_a_string: never};
  * transferState.set(COUNTER_KEY, value);
  * ```
  *
- * @experimental
+ * @publicApi
  */
 export function makeStateKey<T = void>(key: string): StateKey<T> {
   return key as StateKey<T>;
@@ -73,14 +73,14 @@ export function makeStateKey<T = void>(key: string): StateKey<T> {
  * `ServerTransferStateModule` on the server and `BrowserTransferStateModule` on the client.
  *
  * The values in the store are serialized/deserialized using JSON.stringify/JSON.parse. So only
- * boolean, number, string, null and non-class objects will be serialized and deserialzied in a
+ * boolean, number, string, null and non-class objects will be serialized and deserialized in a
  * non-lossy manner.
  *
- * @experimental
+ * @publicApi
  */
 @Injectable()
 export class TransferState {
-  private store: {[k: string]: {} | undefined} = {};
+  private store: {[k: string]: {}|undefined} = {};
   private onSerializeCallbacks: {[k: string]: () => {} | undefined} = {};
 
   /** @internal */
@@ -93,22 +93,30 @@ export class TransferState {
   /**
    * Get the value corresponding to a key. Return `defaultValue` if key is not found.
    */
-  get<T>(key: StateKey<T>, defaultValue: T): T { return this.store[key] as T || defaultValue; }
+  get<T>(key: StateKey<T>, defaultValue: T): T {
+    return this.store[key] !== undefined ? this.store[key] as T : defaultValue;
+  }
 
   /**
    * Set the value corresponding to a key.
    */
-  set<T>(key: StateKey<T>, value: T): void { this.store[key] = value; }
+  set<T>(key: StateKey<T>, value: T): void {
+    this.store[key] = value;
+  }
 
   /**
    * Remove a key from the store.
    */
-  remove<T>(key: StateKey<T>): void { delete this.store[key]; }
+  remove<T>(key: StateKey<T>): void {
+    delete this.store[key];
+  }
 
   /**
    * Test whether a key exists in the store.
    */
-  hasKey<T>(key: StateKey<T>) { return this.store.hasOwnProperty(key); }
+  hasKey<T>(key: StateKey<T>) {
+    return this.store.hasOwnProperty(key);
+  }
 
   /**
    * Register a callback to provide the value for a key when `toJson` is called.
@@ -154,7 +162,7 @@ export function initTransferState(doc: Document, appId: string) {
  * NgModule to install on the client side while using the `TransferState` to transfer state from
  * server to client.
  *
- * @experimental
+ * @publicApi
  */
 @NgModule({
   providers: [{provide: TransferState, useFactory: initTransferState, deps: [DOCUMENT, APP_ID]}],

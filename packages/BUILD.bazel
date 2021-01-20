@@ -5,16 +5,30 @@ exports_files([
     "tsconfig.json",
 ])
 
-load("@build_bazel_rules_typescript//:defs.bzl", "ts_config", "ts_library")
-
-ts_config(
-    name = "tsconfig",
-    src = ":tsconfig-build.json",
-    deps = [],
-)
+load("//tools:defaults.bzl", "ts_config", "ts_library")
 
 ts_library(
     name = "types",
     srcs = glob(["*.ts"]),
-    tsconfig = ":tsconfig",
+    deps = [
+        "//packages/zone.js/lib:zone_d_ts",
+        "@npm//@types/hammerjs",
+    ],
 )
+
+ts_config(
+    name = "tsconfig-test",
+    src = "tsconfig-test.json",
+    deps = [":tsconfig-build.json"],
+)
+
+ts_config(
+    name = "tsconfig-build-no-strict",
+    src = "tsconfig-build-no-strict.json",
+    deps = [":tsconfig-build.json"],
+)
+
+exports_files([
+    "license-banner.txt",
+    "README.md",
+])

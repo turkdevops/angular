@@ -1,20 +1,19 @@
-import { ComponentRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Title } from '@angular/platform-browser';
+import { Meta, Title } from '@angular/platform-browser';
 
-import { Observable } from 'rxjs/Observable';
-import { of } from 'rxjs/observable/of';
+import { Observable, asapScheduler, of } from 'rxjs';
 
-import { EmbedComponentsService } from 'app/embed-components/embed-components.service';
+import { FILE_NOT_FOUND_ID, FETCHING_ERROR_ID } from 'app/documents/document.service';
 import { Logger } from 'app/shared/logger.service';
+import { CustomElementsModule } from 'app/custom-elements/custom-elements.module';
 import { TocService } from 'app/shared/toc.service';
+import { ElementsLoader } from 'app/custom-elements/elements-loader';
 import {
-  MockEmbedComponentsService, MockTitle, MockTocService, ObservableWithSubscriptionSpies,
-  TestDocViewerComponent, TestModule, TestParentComponent
+MockTitle, MockTocService, ObservableWithSubscriptionSpies,
+TestDocViewerComponent, TestModule, TestParentComponent, MockElementsLoader
 } from 'testing/doc-viewer-utils';
 import { MockLogger } from 'testing/logger.service';
 import { DocViewerComponent, NO_ANIMATIONS } from './doc-viewer.component';
-
 
 describe('DocViewerComponent', () => {
   let parentFixture: ComponentFixture<TestParentComponent>;
@@ -22,9 +21,11 @@ describe('DocViewerComponent', () => {
   let docViewerEl: HTMLElement;
   let docViewer: TestDocViewerComponent;
 
+  const safeFlushAsapScheduler = () => asapScheduler.actions.length && asapScheduler.flush();
+
   beforeEach(() => {
     TestBed.configureTestingModule({
-      imports: [TestModule]
+      imports: [CustomElementsModule, TestModule],
     });
 
     parentFixture = TestBed.createComponent(TestParentComponent);
@@ -43,19 +44,20 @@ describe('DocViewerComponent', () => {
   describe('#doc', () => {
     let renderSpy: jasmine.Spy;
 
-    const setCurrentDoc = (contents, id = 'fizz/buzz') => {
-      parentComponent.currentDoc = {contents, id};
-      parentFixture.detectChanges();
+    const setCurrentDoc = (newDoc: TestParentComponent['currentDoc']) => {
+      parentComponent.currentDoc = newDoc;
+      parentFixture.detectChanges();  // Run change detection to propagate the new doc to `DocViewer`.
+      safeFlushAsapScheduler();  // Flush `asapScheduler` to trigger `DocViewer#render()`.
     };
 
-    beforeEach(() => renderSpy = spyOn(docViewer, 'render').and.returnValue([null]));
+    beforeEach(() => renderSpy = spyOn(docViewer, 'render').and.callFake(() => of(undefined)));
 
     it('should render the new document', () => {
-      setCurrentDoc('foo', 'bar');
+      setCurrentDoc({contents: 'foo', id: 'bar'});
       expect(renderSpy).toHaveBeenCalledTimes(1);
       expect(renderSpy.calls.mostRecent().args).toEqual([{id: 'bar', contents: 'foo'}]);
 
-      setCurrentDoc(null, 'baz');
+      setCurrentDoc({contents: null, id: 'baz'});
       expect(renderSpy).toHaveBeenCalledTimes(2);
       expect(renderSpy.calls.mostRecent().args).toEqual([{id: 'baz', contents: null}]);
     });
@@ -64,108 +66,43 @@ describe('DocViewerComponent', () => {
       const obs = new ObservableWithSubscriptionSpies();
       renderSpy.and.returnValue(obs);
 
-      setCurrentDoc('foo', 'bar');
+      setCurrentDoc({contents: 'foo', id: 'bar'});
       expect(obs.subscribeSpy).toHaveBeenCalledTimes(1);
       expect(obs.unsubscribeSpies[0]).not.toHaveBeenCalled();
 
-      setCurrentDoc('baz', 'qux');
+      setCurrentDoc({contents: 'baz', id: 'qux'});
       expect(obs.subscribeSpy).toHaveBeenCalledTimes(2);
       expect(obs.unsubscribeSpies[0]).toHaveBeenCalledTimes(1);
     });
 
     it('should ignore falsy document values', () => {
-      parentComponent.currentDoc = null;
-      parentFixture.detectChanges();
-
+      setCurrentDoc(null);
       expect(renderSpy).not.toHaveBeenCalled();
 
-      parentComponent.currentDoc = undefined;
-      parentFixture.detectChanges();
-
+      setCurrentDoc(undefined);
       expect(renderSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('#ngDoCheck()', () => {
-    let componentInstances: ComponentRef<any>[];
-
-    beforeEach(() => {
-      componentInstances = [
-        {changeDetectorRef: {detectChanges: jasmine.createSpy('detectChanges')}},
-        {changeDetectorRef: {detectChanges: jasmine.createSpy('detectChanges')}},
-        {changeDetectorRef: {detectChanges: jasmine.createSpy('detectChanges')}},
-      ] as any;
-      docViewer.embeddedComponentRefs.push(...componentInstances);
-    });
-
-    afterEach(() => {
-      // Clean up the fake component instances, to avoid error in `ngOnDestroy()`.
-      docViewer.embeddedComponentRefs = [];
-    });
-
-    it('should detect changes on each active component instance', () => {
-      parentFixture.detectChanges();
-      componentInstances.forEach(({changeDetectorRef: cd}) => {
-        expect(cd.detectChanges).toHaveBeenCalledTimes(1);
-      });
-
-      parentFixture.detectChanges();
-      componentInstances.forEach(({changeDetectorRef: cd}) => {
-        expect(cd.detectChanges).toHaveBeenCalledTimes(2);
-      });
     });
   });
 
   describe('#ngOnDestroy()', () => {
-    it('should destroy the active embedded component instances', () => {
-      const destroyEmbeddedComponentsSpy = spyOn(docViewer, 'destroyEmbeddedComponents');
-      docViewer.ngOnDestroy();
-
-      expect(destroyEmbeddedComponentsSpy).toHaveBeenCalledTimes(1);
-    });
-
     it('should stop responding to document changes', () => {
-      const renderSpy = spyOn(docViewer, 'render').and.returnValue([undefined]);
+      const renderSpy = spyOn(docViewer, 'render').and.callFake(() => of(undefined));
 
       expect(renderSpy).not.toHaveBeenCalled();
 
       docViewer.doc = {contents: 'Some content', id: 'some-id'};
+      safeFlushAsapScheduler();
       expect(renderSpy).toHaveBeenCalledTimes(1);
 
       docViewer.ngOnDestroy();
 
       docViewer.doc = {contents: 'Other content', id: 'other-id'};
+      safeFlushAsapScheduler();
       expect(renderSpy).toHaveBeenCalledTimes(1);
 
       docViewer.doc = {contents: 'More content', id: 'more-id'};
+      safeFlushAsapScheduler();
       expect(renderSpy).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe('#destroyEmbeddedComponents()', () => {
-    let componentInstances: ComponentRef<any>[];
-
-    beforeEach(() => {
-      componentInstances = [
-        {destroy: jasmine.createSpy('destroy#1')},
-        {destroy: jasmine.createSpy('destroy#2')},
-        {destroy: jasmine.createSpy('destroy#3')},
-      ] as any;
-      docViewer.embeddedComponentRefs.push(...componentInstances);
-    });
-
-    it('should destroy each active component instance', () => {
-      docViewer.destroyEmbeddedComponents();
-
-      expect(componentInstances.length).toBe(3);
-      componentInstances.forEach(comp => expect(comp.destroy).toHaveBeenCalledTimes(1));
-    });
-
-    it('should clear the list of active component instances', () => {
-      expect(docViewer.embeddedComponentRefs.length).toBeGreaterThan(0);
-
-      docViewer.destroyEmbeddedComponents();
-      expect(docViewer.embeddedComponentRefs.length).toBe(0);
     });
   });
 
@@ -174,6 +111,9 @@ describe('DocViewerComponent', () => {
     const DOC_WITHOUT_H1 = 'Some content';
     const DOC_WITH_H1 = '<h1>Features</h1>Some content';
     const DOC_WITH_NO_TOC_H1 = '<h1 class="no-toc">Features</h1>Some content';
+    const DOC_WITH_EMBEDDED_TOC = '<h1>Features</h1><aio-toc class="embedded"></aio-toc>Some content';
+    const DOC_WITH_EMBEDDED_TOC_WITHOUT_H1 = '<aio-toc class="embedded"></aio-toc>Some content';
+    const DOC_WITH_EMBEDDED_TOC_WITH_NO_TOC_H1 = '<aio-toc class="embedded"></aio-toc>Some content';
     const DOC_WITH_HIDDEN_H1_CONTENT = '<h1><i style="visibility: hidden">link</i>Features</h1>Some content';
     let titleService: MockTitle;
     let tocService: MockTocService;
@@ -190,8 +130,8 @@ describe('DocViewerComponent', () => {
     };
 
     beforeEach(() => {
-      titleService = TestBed.get(Title);
-      tocService = TestBed.get(TocService);
+      titleService = TestBed.inject(Title) as unknown as MockTitle;
+      tocService = TestBed.inject(TocService) as unknown as MockTocService;
 
       targetEl = document.createElement('div');
       document.body.appendChild(targetEl);  // Required for `innerText` to work as expected.
@@ -239,10 +179,10 @@ describe('DocViewerComponent', () => {
       });
 
       it('should fall back to `textContent` if `innerText` is not available', () => {
-        const querySelector_ = targetEl.querySelector;
+        const querySelector = targetEl.querySelector;
         spyOn(targetEl, 'querySelector').and.callFake((selector: string) => {
-          const elem = querySelector_.call(targetEl, selector);
-          return Object.defineProperties(elem, {
+          const elem = querySelector.call(targetEl, selector);
+          return elem && Object.defineProperties(elem, {
             innerText: {value: undefined},
             textContent: {value: 'Text Content'},
           });
@@ -254,10 +194,10 @@ describe('DocViewerComponent', () => {
       });
 
       it('should still use `innerText` if available but empty', () => {
-        const querySelector_ = targetEl.querySelector;
+        const querySelector = targetEl.querySelector;
         spyOn(targetEl, 'querySelector').and.callFake((selector: string) => {
-          const elem = querySelector_.call(targetEl, selector);
-          return Object.defineProperties(elem, {
+          const elem = querySelector.call(targetEl, selector);
+          return elem && Object.defineProperties(elem, {
             innerText: { value: '' },
             textContent: { value: 'Text Content' }
           });
@@ -270,26 +210,45 @@ describe('DocViewerComponent', () => {
     });
 
     describe('(ToC)', () => {
-      it('should add an embedded ToC element if there is an `<h1>` heading', () => {
-        doPrepareTitleAndToc(DOC_WITH_H1);
-        const tocEl = getTocEl()!;
+      describe('needed', () => {
+        it('should add an embedded ToC element if there is an `<h1>` heading', () => {
+          doPrepareTitleAndToc(DOC_WITH_H1);
+          const tocEl = getTocEl();
 
-        expect(tocEl).toBeTruthy();
-        expect(tocEl.classList.contains('embedded')).toBe(true);
+          expect(tocEl).toBeTruthy();
+          expect(tocEl?.classList.contains('embedded')).toBe(true);
+        });
+
+        it('should not add a second ToC element if there a hard coded one in place', () => {
+          doPrepareTitleAndToc(DOC_WITH_EMBEDDED_TOC);
+          expect(targetEl.querySelectorAll('aio-toc').length).toEqual(1);
+        });
       });
 
-      it('should not add a ToC element if there is a `.no-toc` `<h1>` heading', () => {
-        doPrepareTitleAndToc(DOC_WITH_NO_TOC_H1);
-        expect(getTocEl()).toBeFalsy();
+
+      describe('not needed', () => {
+        it('should not add a ToC element if there is a `.no-toc` `<h1>` heading', () => {
+          doPrepareTitleAndToc(DOC_WITH_NO_TOC_H1);
+          expect(getTocEl()).toBeFalsy();
+        });
+
+        it('should not add a ToC element if there is no `<h1>` heading', () => {
+          doPrepareTitleAndToc(DOC_WITHOUT_H1);
+          expect(getTocEl()).toBeFalsy();
+
+          doPrepareTitleAndToc(EMPTY_DOC);
+          expect(getTocEl()).toBeFalsy();
+        });
+
+        it('should remove ToC a hard coded one', () => {
+          doPrepareTitleAndToc(DOC_WITH_EMBEDDED_TOC_WITHOUT_H1);
+          expect(getTocEl()).toBeFalsy();
+
+          doPrepareTitleAndToc(DOC_WITH_EMBEDDED_TOC_WITH_NO_TOC_H1);
+          expect(getTocEl()).toBeFalsy();
+        });
       });
 
-      it('should not add a ToC element if there is no `<h1>` heading', () => {
-        doPrepareTitleAndToc(DOC_WITHOUT_H1);
-        expect(getTocEl()).toBeFalsy();
-
-        doPrepareTitleAndToc(EMPTY_DOC);
-        expect(getTocEl()).toBeFalsy();
-      });
 
       it('should generate ToC entries if there is an `<h1>` heading', () => {
         doAddTitleAndToc(DOC_WITH_H1, 'foo');
@@ -334,22 +293,18 @@ describe('DocViewerComponent', () => {
   });
 
   describe('#render()', () => {
-    let destroyEmbeddedComponentsSpy: jasmine.Spy;
-    let embedIntoSpy: jasmine.Spy;
     let prepareTitleAndTocSpy: jasmine.Spy;
     let swapViewsSpy: jasmine.Spy;
+    let loadElementsSpy: jasmine.Spy;
 
     const doRender = (contents: string | null, id = 'foo') =>
-      new Promise<void>((resolve, reject) =>
-        docViewer.render({contents, id}).subscribe(resolve, reject));
+      docViewer.render({contents, id}).toPromise();
 
     beforeEach(() => {
-      const embedComponentsService = TestBed.get(EmbedComponentsService) as MockEmbedComponentsService;
-
-      destroyEmbeddedComponentsSpy = spyOn(docViewer, 'destroyEmbeddedComponents');
-      embedIntoSpy = embedComponentsService.embedInto.and.returnValue(of([]));
+      const elementsLoader = TestBed.inject(ElementsLoader) as Partial<ElementsLoader> as MockElementsLoader;
+      loadElementsSpy = elementsLoader.loadContainedCustomElements.and.callFake(() => of(undefined));
       prepareTitleAndTocSpy = spyOn(docViewer, 'prepareTitleAndToc');
-      swapViewsSpy = spyOn(docViewer, 'swapViews').and.returnValue(of(undefined));
+      swapViewsSpy = spyOn(docViewer, 'swapViews').and.callFake(() => of(undefined));
     });
 
     it('should return an `Observable`', () => {
@@ -390,7 +345,7 @@ describe('DocViewerComponent', () => {
         await doRender('Some content', 'foo');
 
         expect(prepareTitleAndTocSpy).toHaveBeenCalledTimes(1);
-        expect(prepareTitleAndTocSpy).toHaveBeenCalledBefore(embedIntoSpy);
+        expect(prepareTitleAndTocSpy).toHaveBeenCalledBefore(loadElementsSpy);
       });
 
       it('should set the title and ToC (after the content has been set)', async () => {
@@ -413,36 +368,42 @@ describe('DocViewerComponent', () => {
         await doRender('Qux content');
         expect(addTitleAndTocSpy).toHaveBeenCalledTimes(4);
       });
+
+      it('should remove the "noindex" meta tag if the document is valid', async () => {
+        await doRender('foo', 'bar');
+        expect(TestBed.inject(Meta).removeTag).toHaveBeenCalledWith('name="robots"');
+      });
+
+      it('should add the "noindex" meta tag if the document is 404', async () => {
+        await doRender('missing', FILE_NOT_FOUND_ID);
+        expect(TestBed.inject(Meta).addTag).toHaveBeenCalledWith({ name: 'robots', content: 'noindex' });
+      });
+
+      it('should add a "noindex" meta tag if the document fetching fails', async () => {
+        await doRender('error', FETCHING_ERROR_ID);
+        expect(TestBed.inject(Meta).addTag).toHaveBeenCalledWith({ name: 'robots', content: 'noindex' });
+      });
     });
 
     describe('(embedding components)', () => {
       it('should embed components', async () => {
         await doRender('Some content');
-        expect(embedIntoSpy).toHaveBeenCalledTimes(1);
-        expect(embedIntoSpy).toHaveBeenCalledWith(docViewer.nextViewContainer);
+        expect(loadElementsSpy).toHaveBeenCalledTimes(1);
+        expect(loadElementsSpy).toHaveBeenCalledWith(docViewer.nextViewContainer);
       });
 
       it('should attempt to embed components even if the document is empty', async () => {
         await doRender('');
         await doRender(null);
 
-        expect(embedIntoSpy).toHaveBeenCalledTimes(2);
-        expect(embedIntoSpy.calls.argsFor(0)).toEqual([docViewer.nextViewContainer]);
-        expect(embedIntoSpy.calls.argsFor(1)).toEqual([docViewer.nextViewContainer]);
-      });
-
-      it('should store the embedded components', async () => {
-        const embeddedComponents = [];
-        embedIntoSpy.and.returnValue(of(embeddedComponents));
-
-        await doRender('Some content');
-
-        expect(docViewer.embeddedComponentRefs).toBe(embeddedComponents);
+        expect(loadElementsSpy).toHaveBeenCalledTimes(2);
+        expect(loadElementsSpy.calls.argsFor(0)).toEqual([docViewer.nextViewContainer]);
+        expect(loadElementsSpy.calls.argsFor(1)).toEqual([docViewer.nextViewContainer]);
       });
 
       it('should unsubscribe from the previous "embed" observable when unsubscribed from', () => {
         const obs = new ObservableWithSubscriptionSpies();
-        embedIntoSpy.and.returnValue(obs);
+        loadElementsSpy.and.returnValue(obs);
 
         const renderObservable = docViewer.render({contents: 'Some content', id: 'foo'});
         const subscription = renderObservable.subscribe();
@@ -457,31 +418,7 @@ describe('DocViewerComponent', () => {
       });
     });
 
-    describe('(destroying old embedded components)', () => {
-      it('should destroy old embedded components after creating new embedded components', async () => {
-        await doRender('<div></div>');
-
-        expect(destroyEmbeddedComponentsSpy).toHaveBeenCalledTimes(1);
-        expect(embedIntoSpy).toHaveBeenCalledBefore(destroyEmbeddedComponentsSpy);
-      });
-
-      it('should still destroy old embedded components if the new document is empty', async () => {
-        await doRender('');
-        expect(destroyEmbeddedComponentsSpy).toHaveBeenCalledTimes(1);
-
-        await doRender(null);
-        expect(destroyEmbeddedComponentsSpy).toHaveBeenCalledTimes(2);
-      });
-    });
-
     describe('(swapping views)', () => {
-      it('should swap the views after destroying old embedded components', async () => {
-        await doRender('<div></div>');
-
-        expect(swapViewsSpy).toHaveBeenCalledTimes(1);
-        expect(destroyEmbeddedComponentsSpy).toHaveBeenCalledBefore(swapViewsSpy);
-      });
-
       it('should still swap the views if the document is empty', async () => {
         await doRender('');
         expect(swapViewsSpy).toHaveBeenCalledTimes(1);
@@ -519,7 +456,9 @@ describe('DocViewerComponent', () => {
     describe('(on error) should clean up, log the error and recover', () => {
       let logger: MockLogger;
 
-      beforeEach(() => logger = TestBed.get(Logger));
+      beforeEach(() => {
+        logger = TestBed.inject(Logger) as unknown as MockLogger;
+      });
 
       it('when `prepareTitleAndTocSpy()` fails', async () => {
         const error = Error('Typical `prepareTitleAndToc()` error');
@@ -531,18 +470,18 @@ describe('DocViewerComponent', () => {
         await doRender('Some content', 'foo');
 
         expect(prepareTitleAndTocSpy).toHaveBeenCalledTimes(1);
-        expect(embedIntoSpy).not.toHaveBeenCalled();
-        expect(destroyEmbeddedComponentsSpy).not.toHaveBeenCalled();
         expect(swapViewsSpy).not.toHaveBeenCalled();
         expect(docViewer.nextViewContainer.innerHTML).toBe('');
         expect(logger.output.error).toEqual([
-          ['[DocViewer]: Error preparing document \'foo\'.', error],
+          [jasmine.any(Error)]
         ]);
+        expect(logger.output.error[0][0].message).toEqual(`[DocViewer] Error preparing document 'foo': ${error.stack}`);
+        expect(TestBed.inject(Meta).addTag).toHaveBeenCalledWith({ name: 'robots', content: 'noindex' });
       });
 
       it('when `EmbedComponentsService.embedInto()` fails', async () => {
         const error = Error('Typical `embedInto()` error');
-        embedIntoSpy.and.callFake(() => {
+        loadElementsSpy.and.callFake(() => {
           expect(docViewer.nextViewContainer.innerHTML).not.toBe('');
           throw error;
         });
@@ -550,32 +489,13 @@ describe('DocViewerComponent', () => {
         await doRender('Some content', 'bar');
 
         expect(prepareTitleAndTocSpy).toHaveBeenCalledTimes(1);
-        expect(embedIntoSpy).toHaveBeenCalledTimes(1);
-        expect(destroyEmbeddedComponentsSpy).not.toHaveBeenCalled();
+        expect(loadElementsSpy).toHaveBeenCalledTimes(1);
         expect(swapViewsSpy).not.toHaveBeenCalled();
         expect(docViewer.nextViewContainer.innerHTML).toBe('');
         expect(logger.output.error).toEqual([
-          ['[DocViewer]: Error preparing document \'bar\'.', error],
+          [jasmine.any(Error)]
         ]);
-      });
-
-      it('when `destroyEmbeddedComponents()` fails', async () => {
-        const error = Error('Typical `destroyEmbeddedComponents()` error');
-        destroyEmbeddedComponentsSpy.and.callFake(() => {
-          expect(docViewer.nextViewContainer.innerHTML).not.toBe('');
-          throw error;
-        });
-
-        await doRender('Some content', 'baz');
-
-        expect(prepareTitleAndTocSpy).toHaveBeenCalledTimes(1);
-        expect(embedIntoSpy).toHaveBeenCalledTimes(1);
-        expect(destroyEmbeddedComponentsSpy).toHaveBeenCalledTimes(1);
-        expect(swapViewsSpy).not.toHaveBeenCalled();
-        expect(docViewer.nextViewContainer.innerHTML).toBe('');
-        expect(logger.output.error).toEqual([
-          ['[DocViewer]: Error preparing document \'baz\'.', error],
-        ]);
+        expect(TestBed.inject(Meta).addTag).toHaveBeenCalledWith({ name: 'robots', content: 'noindex' });
       });
 
       it('when `swapViews()` fails', async () => {
@@ -588,35 +508,52 @@ describe('DocViewerComponent', () => {
         await doRender('Some content', 'qux');
 
         expect(prepareTitleAndTocSpy).toHaveBeenCalledTimes(1);
-        expect(embedIntoSpy).toHaveBeenCalledTimes(1);
-        expect(destroyEmbeddedComponentsSpy).toHaveBeenCalledTimes(1);
         expect(swapViewsSpy).toHaveBeenCalledTimes(1);
         expect(docViewer.nextViewContainer.innerHTML).toBe('');
         expect(logger.output.error).toEqual([
-          ['[DocViewer]: Error preparing document \'qux\'.', error],
+          [jasmine.any(Error)]
         ]);
+        expect(logger.output.error[0][0].message).toEqual(`[DocViewer] Error preparing document 'qux': ${error.stack}`);
+        expect(TestBed.inject(Meta).addTag).toHaveBeenCalledWith({ name: 'robots', content: 'noindex' });
+      });
+
+      it('when something fails with non-Error', async () => {
+        const error = 'Typical string error';
+        swapViewsSpy.and.callFake(() => {
+          expect(docViewer.nextViewContainer.innerHTML).not.toBe('');
+          throw error;
+        });
+
+        await doRender('Some content', 'qux');
+
+        expect(swapViewsSpy).toHaveBeenCalledTimes(1);
+        expect(docViewer.nextViewContainer.innerHTML).toBe('');
+        expect(logger.output.error).toEqual([
+          [jasmine.any(Error)]
+        ]);
+        expect(logger.output.error[0][0].message).toEqual(`[DocViewer] Error preparing document 'qux': ${error}`);
+        expect(TestBed.inject(Meta).addTag).toHaveBeenCalledWith({ name: 'robots', content: 'noindex' });
       });
     });
 
     describe('(events)', () => {
-      it('should emit `docReady` after embedding components', async () => {
+      it('should emit `docReady` after loading elements', async () => {
         const onDocReadySpy = jasmine.createSpy('onDocReady');
         docViewer.docReady.subscribe(onDocReadySpy);
 
         await doRender('Some content');
 
         expect(onDocReadySpy).toHaveBeenCalledTimes(1);
-        expect(embedIntoSpy).toHaveBeenCalledBefore(onDocReadySpy);
+        expect(loadElementsSpy).toHaveBeenCalledBefore(onDocReadySpy);
       });
 
-      it('should emit `docReady` before destroying old embedded components and swapping views', async () => {
+      it('should emit `docReady` before swapping views', async () => {
         const onDocReadySpy = jasmine.createSpy('onDocReady');
         docViewer.docReady.subscribe(onDocReadySpy);
 
         await doRender('Some content');
 
         expect(onDocReadySpy).toHaveBeenCalledTimes(1);
-        expect(onDocReadySpy).toHaveBeenCalledBefore(destroyEmbeddedComponentsSpy);
         expect(onDocReadySpy).toHaveBeenCalledBefore(swapViewsSpy);
       });
 
@@ -636,9 +573,7 @@ describe('DocViewerComponent', () => {
     let oldCurrViewContainer: HTMLElement;
     let oldNextViewContainer: HTMLElement;
 
-    const doSwapViews = (cb?: () => void) =>
-      new Promise<void>((resolve, reject) =>
-        docViewer.swapViews(cb).subscribe(resolve, reject));
+    const doSwapViews = (cb?: () => void) => docViewer.swapViews(cb).toPromise();
 
     beforeEach(() => {
       oldCurrViewContainer = docViewer.currViewContainer;

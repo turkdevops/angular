@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -9,6 +9,8 @@
 // THIS CODE IS GENERATED - DO NOT MODIFY
 // See angular/tools/gulp-tasks/cldr/extract.js
 
+const u = undefined;
+
 export default [
   [
     ['חצות', 'בבוקר', 'בצהריים', 'אחה״צ', 'בערב', 'בלילה', 'לפנות בוקר'],
@@ -16,7 +18,7 @@ export default [
     ['חצות', 'בבוקר', 'בצהריים', 'אחר הצהריים', 'בערב', 'בלילה', 'לפנות בוקר']
   ],
   [
-    ['חצות', 'בוקר', 'צהריים', 'אחה״צ', 'ערב', 'לילה', 'לפנות בוקר'], ,
+    ['חצות', 'בוקר', 'צהריים', 'אחה״צ', 'ערב', 'לילה', 'לפנות בוקר'], u,
     ['חצות', 'בוקר', 'צהריים', 'אחר הצהריים', 'ערב', 'לילה', 'לפנות בוקר']
   ],
   [

@@ -1,6 +1,7 @@
+// tslint:disable: no-output-native
 // #docregion
 import { Component, EventEmitter, Input, Output } from '@angular/core';
-import { HeroTaxReturn }        from './hero';
+import { HeroTaxReturn } from './hero';
 import { HeroTaxReturnService } from './hero-tax-return.service';
 
 @Component({
@@ -13,24 +14,26 @@ import { HeroTaxReturnService } from './hero-tax-return.service';
 })
 export class HeroTaxReturnComponent {
   message = '';
+
   @Output() close = new EventEmitter<void>();
 
   get taxReturn(): HeroTaxReturn {
     return this.heroTaxReturnService.taxReturn;
   }
+
   @Input()
-  set taxReturn (htr: HeroTaxReturn) {
+  set taxReturn(htr: HeroTaxReturn) {
     this.heroTaxReturnService.taxReturn = htr;
   }
 
-  constructor(private heroTaxReturnService: HeroTaxReturnService ) { }
+  constructor(private heroTaxReturnService: HeroTaxReturnService) { }
 
   onCanceled()  {
     this.flashMessage('Canceled');
     this.heroTaxReturnService.restoreTaxReturn();
-  };
+  }
 
-  onClose()  { this.close.emit(); };
+  onClose() { this.close.emit(); }
 
   onSaved() {
     this.flashMessage('Saved');

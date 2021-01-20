@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -28,9 +28,11 @@ import {WebDriverAdapter} from './web_driver_adapter';
 export class Sampler {
   static PROVIDERS = <StaticProvider[]>[{
     provide: Sampler,
-    deps: [
-      WebDriverAdapter, Metric, Reporter, Validator, Options.PREPARE, Options.EXECUTE, Options.NOW
-    ]
+    deps:
+        [
+          WebDriverAdapter, Metric, Reporter, Validator, Options.PREPARE, Options.EXECUTE,
+          Options.NOW
+        ]
   }];
   constructor(
       private _driver: WebDriverAdapter, private _metric: Metric, private _reporter: Reporter,
@@ -63,7 +65,12 @@ export class Sampler {
     }
     return resultPromise.then((_) => this._driver.waitFor(this._execute))
         .then((_) => this._metric.endMeasure(this._prepare === Options.NO_PREPARE))
-        .then((measureValues) => this._report(lastState, measureValues));
+        .then((measureValues) => {
+          if (!!measureValues['invalid']) {
+            return lastState;
+          }
+          return this._report(lastState, measureValues);
+        });
   }
 
   private _report(state: SampleState, metricValues: {[key: string]: any}): Promise<SampleState> {

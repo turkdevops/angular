@@ -1,15 +1,14 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
 import {DOCUMENT} from '@angular/common';
-import {Inject, Injectable, InjectionToken} from '@angular/core';
-import {Observable} from 'rxjs/Observable';
-import {Observer} from 'rxjs/Observer';
+import {Inject, Injectable} from '@angular/core';
+import {Observable, Observer} from 'rxjs';
 
 import {HttpBackend, HttpHandler} from './backend';
 import {HttpRequest} from './request';
@@ -35,27 +34,41 @@ export const JSONP_ERR_WRONG_RESPONSE_TYPE = 'JSONP requests must use Json respo
  *
  * In the browser, this should always be the `window` object.
  *
- * @stable
+ *
  */
-export abstract class JsonpCallbackContext { [key: string]: (data: any) => void; }
+export abstract class JsonpCallbackContext {
+  [key: string]: (data: any) => void;
+}
 
 /**
- * `HttpBackend` that only processes `HttpRequest` with the JSONP method,
+ * Processes an `HttpRequest` with the JSONP method,
  * by performing JSONP style requests.
+ * @see `HttpHandler`
+ * @see `HttpXhrBackend`
  *
- * @stable
+ * @publicApi
  */
 @Injectable()
 export class JsonpClientBackend implements HttpBackend {
+  /**
+   * A resolved promise that can be used to schedule microtasks in the event handlers.
+   */
+  private readonly resolvedPromise = Promise.resolve();
+
   constructor(private callbackMap: JsonpCallbackContext, @Inject(DOCUMENT) private document: any) {}
 
   /**
    * Get the name of the next callback method, by incrementing the global `nextRequestId`.
    */
-  private nextCallback(): string { return `ng_jsonp_callback_${nextRequestId++}`; }
+  private nextCallback(): string {
+    return `ng_jsonp_callback_${nextRequestId++}`;
+  }
 
   /**
-   * Process a JSONP request and return an event stream of the results.
+   * Processes a JSONP request and returns an event stream of the results.
+   * @param req The request object.
+   * @returns An observable of the response events.
+   *
    */
   handle(req: HttpRequest<never>): Observable<HttpEvent<any>> {
     // Firstly, check both the method and response type. If either doesn't match
@@ -132,32 +145,38 @@ export class JsonpClientBackend implements HttpBackend {
           return;
         }
 
-        // Cleanup the page.
-        cleanup();
+        // We wrap it in an extra Promise, to ensure the microtask
+        // is scheduled after the loaded endpoint has executed any potential microtask itself,
+        // which is not guaranteed in Internet Explorer and EdgeHTML. See issue #39496
+        this.resolvedPromise.then(() => {
+          // Cleanup the page.
+          cleanup();
 
-        // Check whether the response callback has run.
-        if (!finished) {
-          // It hasn't, something went wrong with the request. Return an error via
-          // the Observable error path. All JSONP errors have status 0.
-          observer.error(new HttpErrorResponse({
+          // Check whether the response callback has run.
+          if (!finished) {
+            // It hasn't, something went wrong with the request. Return an error via
+            // the Observable error path. All JSONP errors have status 0.
+            observer.error(new HttpErrorResponse({
+              url,
+              status: 0,
+              statusText: 'JSONP Error',
+              error: new Error(JSONP_ERR_NO_CALLBACK),
+            }));
+            return;
+          }
+
+          // Success. body either contains the response body or null if none was
+          // returned.
+          observer.next(new HttpResponse({
+            body,
+            status: 200,
+            statusText: 'OK',
             url,
-            status: 0,
-            statusText: 'JSONP Error',
-            error: new Error(JSONP_ERR_NO_CALLBACK),
           }));
-          return;
-        }
 
-        // Success. body either contains the response body or null if none was
-        // returned.
-        observer.next(new HttpResponse({
-          body,
-          status: 200,
-          statusText: 'OK', url,
-        }));
-
-        // Complete the stream, the resposne is over.
-        observer.complete();
+          // Complete the stream, the response is over.
+          observer.complete();
+        });
       };
 
       // onError() is the error callback, which runs if the script returned generates
@@ -174,7 +193,8 @@ export class JsonpClientBackend implements HttpBackend {
         observer.error(new HttpErrorResponse({
           error,
           status: 0,
-          statusText: 'JSONP Error', url,
+          statusText: 'JSONP Error',
+          url,
         }));
       };
 
@@ -204,15 +224,24 @@ export class JsonpClientBackend implements HttpBackend {
 }
 
 /**
- * An `HttpInterceptor` which identifies requests with the method JSONP and
+ * Identifies requests with the method JSONP and
  * shifts them to the `JsonpClientBackend`.
  *
- * @stable
+ * @see `HttpInterceptor`
+ *
+ * @publicApi
  */
 @Injectable()
 export class JsonpInterceptor {
   constructor(private jsonp: JsonpClientBackend) {}
 
+  /**
+   * Identifies and handles a given JSONP request.
+   * @param req The outgoing request object to handle.
+   * @param next The next interceptor in the chain, or the backend
+   * if no interceptors remain in the chain.
+   * @returns An observable of the event stream.
+   */
   intercept(req: HttpRequest<any>, next: HttpHandler): Observable<HttpEvent<any>> {
     if (req.method === 'JSONP') {
       return this.jsonp.handle(req as HttpRequest<never>);

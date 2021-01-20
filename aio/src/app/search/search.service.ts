@@ -1,16 +1,6 @@
-/*
-Copyright 2016 Google Inc. All Rights Reserved.
-Use of this source code is governed by an MIT-style license that
-can be found in the LICENSE file at http://angular.io/license
-*/
-
 import { NgZone, Injectable } from '@angular/core';
-import { Observable } from 'rxjs/Observable';
-import { ReplaySubject } from 'rxjs/ReplaySubject';
-import 'rxjs/add/observable/race';
-import 'rxjs/add/observable/timer';
-import 'rxjs/add/operator/concatMap';
-import 'rxjs/add/operator/publishReplay';
+import { ConnectableObservable, Observable, race, ReplaySubject, timer } from 'rxjs';
+import { concatMap, first, publishReplay } from 'rxjs/operators';
 import { WebWorkerClient } from 'app/shared/web-worker';
 import { SearchResults } from 'app/search/interfaces';
 
@@ -26,24 +16,26 @@ export class SearchService {
    * initial rendering of the web page. Triggering a search will override this delay and cause the index to be
    * loaded immediately.
    *
-   * @param workerUrl the url of the WebWorker script that runs the searches
    * @param initDelay the number of milliseconds to wait before we load the WebWorker and generate the search index
    */
-  initWorker(workerUrl: string, initDelay: number) {
-    const ready = this.ready = Observable
-      // Wait for the initDelay or the first search
-      .race<any>(
-        Observable.timer(initDelay),
-        (this.searchesSubject as Observable<string>).first()
+  initWorker(initDelay: number) {
+    // Wait for the initDelay or the first search
+    const ready = this.ready = race<any>(
+        timer(initDelay),
+        this.searchesSubject.asObservable().pipe(first()),
       )
-      .concatMap(() => {
-        // Create the worker and load the index
-        this.worker = WebWorkerClient.create(workerUrl, this.zone);
-        return this.worker.sendMessage<boolean>('load-index');
-      }).publishReplay(1);
+      .pipe(
+        concatMap(() => {
+          // Create the worker and load the index
+          const worker = new Worker('./search.worker', { type: 'module' });
+          this.worker = WebWorkerClient.create(worker, this.zone);
+          return this.worker.sendMessage<boolean>('load-index');
+        }),
+        publishReplay(1),
+      );
 
     // Connect to the observable to kick off the timer
-    ready.connect();
+    (ready as ConnectableObservable<boolean>).connect();
     return ready;
   }
 
@@ -56,6 +48,6 @@ export class SearchService {
     // Trigger the searches subject to override the init delay timer
     this.searchesSubject.next(query);
     // Once the index has loaded, switch to listening to the searches coming in.
-    return this.ready.concatMap(() => this.worker.sendMessage<SearchResults>('query-index', query));
+    return this.ready.pipe(concatMap(() => this.worker.sendMessage<SearchResults>('query-index', query)));
   }
 }

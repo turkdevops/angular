@@ -1,17 +1,30 @@
 #!/usr/bin/env bash
 
-set -e -o pipefail
+set -u -e -o pipefail
 
-cd `dirname $0`
+# see https://circleci.com/docs/2.0/env-vars/#circleci-built-in-environment-variables
+CI=${CI:-false}
 
-readonly thisDir=$(cd $(dirname $0); pwd)
+cd "$(dirname "$0")"
 
-# Track payload size functions
-source ../scripts/ci/payload-size.sh
+# If we aren't running on CircleCI, we do not shard tests because this would be the job of
+# Bazel eventually. For now, we just run all tests sequentially when running locally.
+if [ -n "${1:-}" ]; then
+  readonly RUN_TESTS=$@
+else
+  readonly RUN_TESTS=$(find $(ls) -maxdepth 0 -type d)
+fi
+
+echo "Running integration tests:"
+echo ${RUN_TESTS}
+
+# Build the packages-dist directory.
+# This should be fast on incremental re-build.
+node ../scripts/build/build-packages-dist.js
 
 # Workaround https://github.com/yarnpkg/yarn/issues/2165
 # Yarn will cache file://dist URIs and not update Angular code
-readonly cache=.yarn_local_cache
+export readonly cache=.yarn_local_cache
 function rm_cache {
   rm -rf $cache
 }
@@ -19,39 +32,27 @@ rm_cache
 mkdir $cache
 trap rm_cache EXIT
 
-# We need to install `ng` but don't want to do it globally so we place it into `.ng-cli` folder.
-(
-  mkdir -p .ng-cli
-  cd .ng-cli
-
-  # workaround for https://github.com/yarnpkg/yarn/pull/4464 which causes cli to be installed into the root node_modules
-  echo '{"name": "ng-cli"}' > package.json
-  yarn init -y
-
-  yarn add @angular/cli@$ANGULAR_CLI_VERSION --cache-folder ../$cache
-)
-./ng-cli-create.sh cli-hello-world
-
-for testDir in $(ls | grep -v node_modules) ; do
+for testDir in ${RUN_TESTS}; do
   [[ -d "$testDir" ]] || continue
-  echo "#################################"
+
+  echo ""
+  echo "######################################################################"
   echo "Running integration test $testDir"
-  echo "#################################"
+  echo "######################################################################"
+
   (
     cd $testDir
-    # Workaround for https://github.com/yarnpkg/yarn/issues/2256
-    rm -f yarn.lock
     rm -rf dist
+
+    # Ensure the versions of (non-local) dependencies are exact versions (not version ranges) and
+    # in-sync between `package.json` and the lockfile.
+    # (NOTE: This must be run before `yarn install`, which updates the lockfile.)
+    node ../check-dependencies .
+
     yarn install --cache-folder ../$cache
     yarn test || exit 1
-    # Track payload size for cli-hello-world and hello_world__closure
-    if [[ $testDir == cli-hello-world ]] || [[ $testDir == hello_world__closure ]]; then
-      if [[ $testDir == cli-hello-world ]]; then
-        yarn build
-      fi
-      trackPayloadSize "$testDir" "dist/*.js" true false "${thisDir}/_payload-limits.json"
-    fi
+
+    # remove the temporary node modules directory to keep the source folder clean.
+    rm -rf node_modules
   )
 done
-
-trackPayloadSize "umd" "../dist/packages-dist/*/bundles/*.umd.min.js" false false

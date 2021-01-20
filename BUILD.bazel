@@ -1,40 +1,58 @@
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["tsconfig.json"])
+exports_files([
+    "LICENSE",
+    "karma-js.conf.js",
+    "browser-providers.conf.js",
+    "scripts/ci/track-payload-size.sh",
+    "scripts/ci/payload-size.sh",
+    "scripts/ci/payload-size.js",
+    "package.json",
+])
 
-# This rule belongs in node_modules/BUILD
-# It's here as a workaround for
-# https://github.com/bazelbuild/bazel/issues/374#issuecomment-296217940
+alias(
+    name = "tsconfig.json",
+    actual = "//packages:tsconfig-build.json",
+)
+
 filegroup(
-    name = "node_modules",
-    # Performance workaround: list individual files
-    # Reduces the number of files as inputs to nodejs_binary:
-    # bazel query "deps(:node_modules)" | wc -l
-    # This won't scale in the general case.
-    # TODO(alexeagle): figure out what to do
-    srcs = glob(["/".join([
-        "node_modules",
-        pkg,
-        "**",
-        ext,
-    ]) for pkg in [
-        "jasmine",
-        "typescript",
-        "zone.js",
-        "tsutils",
-        "@types/jasmine",
-        "@types/node",
-        "@types/source-map",
-        "tsickle",
-        "hammerjs",
-        "protobufjs",
-        "bytebuffer",
-        "reflect-metadata",
-        "source-map-support",
-        "minimist",
-    ] for ext in [
-        "*.js",
-        "*.json",
-        "*.d.ts",
-    ]]),
+    name = "web_test_bootstrap_scripts",
+    # do not sort
+    srcs = [
+        "@npm//:node_modules/core-js/client/core.js",
+        "//packages/zone.js/bundles:zone.umd.js",
+        "//packages/zone.js/bundles:zone-testing.umd.js",
+        "//packages/zone.js/bundles:task-tracking.umd.js",
+        "//:test-events.js",
+        "//:third_party/shims_for_IE.js",
+        # Including systemjs because it defines `__eval`, which produces correct stack traces.
+        "@npm//:node_modules/systemjs/dist/system.src.js",
+        "@npm//:node_modules/reflect-metadata/Reflect.js",
+    ],
+)
+
+filegroup(
+    name = "angularjs_scripts",
+    srcs = [
+        # We also declare the unminified AngularJS files since these can be used for
+        # local debugging (e.g. see: packages/upgrade/test/common/test_helpers.ts)
+        "@npm//:node_modules/angular/angular.js",
+        "@npm//:node_modules/angular/angular.min.js",
+        "@npm//:node_modules/angular-1.5/angular.js",
+        "@npm//:node_modules/angular-1.5/angular.min.js",
+        "@npm//:node_modules/angular-1.6/angular.js",
+        "@npm//:node_modules/angular-1.6/angular.min.js",
+        "@npm//:node_modules/angular-1.7/angular.js",
+        "@npm//:node_modules/angular-1.7/angular.min.js",
+        "@npm//:node_modules/angular-mocks/angular-mocks.js",
+        "@npm//:node_modules/angular-mocks-1.5/angular-mocks.js",
+        "@npm//:node_modules/angular-mocks-1.6/angular-mocks.js",
+        "@npm//:node_modules/angular-mocks-1.7/angular-mocks.js",
+    ],
+)
+
+# Detect if the build is running under --stamp
+config_setting(
+    name = "stamp",
+    values = {"stamp": "true"},
 )

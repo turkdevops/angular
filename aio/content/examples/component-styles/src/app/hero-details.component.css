@@ -1,5 +1,6 @@
 /* #docregion import */
-@import 'hero-details-box.css';
+/* The AOT compiler needs the `./` to show that this is local */
+@import './hero-details-box.css';
 /* #enddocregion import */
 
 /* #docregion host */
@@ -22,7 +23,7 @@
 /* #enddocregion hostcontext */
 
 /* #docregion deep */
-:host /deep/ h3 {
+:host ::ng-deep h3 {
   font-style: italic;
 }
 /* #enddocregion deep */

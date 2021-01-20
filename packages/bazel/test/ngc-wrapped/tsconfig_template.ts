@@ -1,13 +1,12 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
 import * as path from 'path';
-import * as ts from 'typescript';
 
 const EXT = /(\.ts|\.d\.ts|\.js|\.jsx|\.tsx)$/;
 
@@ -32,7 +31,6 @@ export function createTsConfig(options: TsConfigOptions) {
   const result = options.defaultTsConfig;
 
   return {
-    'extends': '../angular/test/ngc-wrapped/empty/tsconfig',
     'compilerOptions': {
       ...result.compilerOptions,
       'outDir': options.outDir,
@@ -55,6 +53,7 @@ export function createTsConfig(options: TsConfigOptions) {
       // declaration in the same tsconfig.json, otherwise ts will error.
       'declaration': true,
       'declarationDir': options.outDir,
+      'skipLibCheck': true,
     },
     'bazelOptions': {
       ...result.bazelOptions,
@@ -70,7 +69,8 @@ export function createTsConfig(options: TsConfigOptions) {
       'tsickleExternsPath': '',
       // we don't copy the node_modules into our tmp dir, so we should look in
       // the original workspace directory for it
-      'nodeModulesPrefix': '../angular_src/node_modules',
+      'nodeModulesPrefix':
+          path.join(require.resolve('npm/node_modules/typescript/package.json'), '../../'),
     },
     'files': options.files,
     'angularCompilerOptions': {

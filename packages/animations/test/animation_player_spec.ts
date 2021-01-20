@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -10,7 +10,7 @@ import {flushMicrotasks} from '../../core/testing/src/fake_async';
 import {NoopAnimationPlayer} from '../src/players/animation_player';
 import {scheduleMicroTask} from '../src/util';
 
-export function main() {
+{
   describe('NoopAnimationPlayer', function() {
     it('should finish after the next microtask once started', fakeAsync(() => {
          const log: string[] = [];
@@ -69,7 +69,9 @@ export function main() {
          const log: string[] = [];
 
          const player = new NoopAnimationPlayer();
-         player.onStart(() => { scheduleMicroTask(() => log.push('started')); });
+         player.onStart(() => {
+           scheduleMicroTask(() => log.push('started'));
+         });
          player.onDone(() => log.push('done'));
          expect(log).toEqual([]);
 

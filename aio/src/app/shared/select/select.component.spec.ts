@@ -8,7 +8,6 @@ const options = [
   { title: 'Option B', value: 'option-b' }
 ];
 
-let component: SelectComponent;
 let host: HostComponent;
 let fixture: ComponentFixture<HostComponent>;
 let element: DebugElement;
@@ -25,7 +24,6 @@ describe('SelectComponent', () => {
     fixture = TestBed.createComponent(HostComponent);
     host = fixture.componentInstance;
     element = fixture.debugElement.query(By.directive(SelectComponent));
-    component = element.componentInstance;
   });
 
   describe('(initially)', () => {
@@ -37,19 +35,17 @@ describe('SelectComponent', () => {
 
   describe('button', () => {
     it('should display the label if provided', () => {
-      expect(getButton().textContent.trim()).toEqual('');
+      expect(getButton().textContent?.trim()).toEqual('');
       host.label = 'Label:';
       fixture.detectChanges();
-      expect(getButton().textContent.trim()).toEqual('Label:');
+      expect(getButton().textContent?.trim()).toEqual('Label:');
     });
 
-    it('should contain a symbol `<span>` if hasSymbol is true', () => {
-      expect(getButton().querySelector('span')).toEqual(null);
+    it('should contain a symbol if hasSymbol is true', () => {
+      expect(getButtonSymbol()).toEqual(null);
       host.showSymbol = true;
       fixture.detectChanges();
-      const span = getButton().querySelector('span');
-      expect(span).not.toEqual(null);
-      expect(span.className).toContain('symbol');
+      expect(getButtonSymbol()).not.toEqual(null);
     });
 
     it('should display the selected option, if there is one', () => {
@@ -57,7 +53,7 @@ describe('SelectComponent', () => {
       host.selected = options[0];
       fixture.detectChanges();
       expect(getButton().textContent).toContain(options[0].title);
-      expect(getButton().querySelector('span').className).toContain(options[0].value);
+      expect(getButtonSymbol()?.className).toContain(options[0].value);
     });
 
     it('should toggle the visibility of the options list when clicked', () => {
@@ -69,13 +65,35 @@ describe('SelectComponent', () => {
       fixture.detectChanges();
       expect(getOptionContainer()).toEqual(null);
     });
+
+    it('should be disabled if the component is disabled', () => {
+      host.options = options;
+      fixture.detectChanges();
+      expect(getButton().disabled).toBe(false);
+      expect(getButton().getAttribute('disabled')).toBe(null);
+
+      host.disabled = true;
+      fixture.detectChanges();
+      expect(getButton().disabled).toBe(true);
+      expect(getButton().getAttribute('disabled')).toBeDefined();
+    });
+
+    it('should not toggle the visibility of the options list if disabled', () => {
+      host.options = options;
+      host.disabled = true;
+
+      fixture.detectChanges();
+      getButton().click();
+      fixture.detectChanges();
+      expect(getOptionContainer()).toEqual(null);
+    });
   });
 
   describe('options list', () => {
     beforeEach(() => {
       host.options = options;
       host.showSymbol = true;
-      getButton().click(); // ensure the the options are visible
+      getButton().click(); // ensure the options are visible
       fixture.detectChanges();
     });
 
@@ -90,7 +108,7 @@ describe('SelectComponent', () => {
       fixture.detectChanges();
       expect(host.onChange).toHaveBeenCalledWith({ option: options[0], index: 0 });
       expect(getButton().textContent).toContain(options[0].title);
-      expect(getButton().querySelector('span').className).toContain(options[0].value);
+      expect(getButtonSymbol()?.className).toContain(options[0].value);
     });
 
     it('should select the current option when enter is pressed', () => {
@@ -99,7 +117,7 @@ describe('SelectComponent', () => {
       fixture.detectChanges();
       expect(host.onChange).toHaveBeenCalledWith({ option: options[0], index: 0 });
       expect(getButton().textContent).toContain(options[0].title);
-      expect(getButton().querySelector('span').className).toContain(options[0].value);
+      expect(getButtonSymbol()?.className).toContain(options[0].value);
     });
 
     it('should select the current option when space is pressed', () => {
@@ -108,7 +126,7 @@ describe('SelectComponent', () => {
       fixture.detectChanges();
       expect(host.onChange).toHaveBeenCalledWith({ option: options[0], index: 0 });
       expect(getButton().textContent).toContain(options[0].title);
-      expect(getButton().querySelector('span').className).toContain(options[0].value);
+      expect(getButtonSymbol()?.className).toContain(options[0].value);
     });
 
     it('should hide when an option is clicked', () => {
@@ -140,7 +158,8 @@ describe('SelectComponent', () => {
               [options]="options"
               [selected]="selected"
               [label]="label"
-              [showSymbol]="showSymbol">
+              [showSymbol]="showSymbol"
+              [disabled]="disabled">
     </aio-select>`
 })
 class HostComponent {
@@ -149,13 +168,18 @@ class HostComponent {
   selected: Option;
   label: string;
   showSymbol: boolean;
+  disabled: boolean;
 }
 
 function getButton(): HTMLButtonElement {
   return element.query(By.css('button')).nativeElement;
 }
 
-function getOptionContainer(): HTMLUListElement {
+function getButtonSymbol(): HTMLElement | null {
+  return getButton().querySelector('.symbol');
+}
+
+function getOptionContainer(): HTMLUListElement|null {
   const de = element.query(By.css('ul'));
   return de && de.nativeElement;
 }

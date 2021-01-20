@@ -1,18 +1,19 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
 import {CompilerConfig} from '../config';
-import {MissingTranslationStrategy, ViewEncapsulation} from '../core';
+import {ViewEncapsulation} from '../core';
 import {DirectiveNormalizer} from '../directive_normalizer';
 import {DirectiveResolver} from '../directive_resolver';
 import {Lexer} from '../expression_parser/lexer';
 import {Parser} from '../expression_parser/parser';
 import {I18NHtmlParser} from '../i18n/i18n_html_parser';
+import {InjectableCompiler} from '../injectable_compiler';
 import {CompileMetadataResolver} from '../metadata_resolver';
 import {HtmlParser} from '../ml_parser/html_parser';
 import {NgModuleCompiler} from '../ng_module_compiler';
@@ -31,13 +32,13 @@ import {AotCompiler} from './compiler';
 import {AotCompilerHost} from './compiler_host';
 import {AotCompilerOptions} from './compiler_options';
 import {StaticReflector} from './static_reflector';
-import {StaticSymbol, StaticSymbolCache} from './static_symbol';
+import {StaticSymbolCache} from './static_symbol';
 import {StaticSymbolResolver} from './static_symbol_resolver';
 import {AotSummaryResolver} from './summary_resolver';
 
-export function createAotUrlResolver(host: {
-  resourceNameToFileName(resourceName: string, containingFileName: string): string | null;
-}): UrlResolver {
+export function createAotUrlResolver(
+    host: {resourceNameToFileName(resourceName: string, containingFileName: string): string|null;}):
+    UrlResolver {
   return {
     resolve: (basePath: string, url: string) => {
       const filePath = host.resourceNameToFileName(url, basePath);
@@ -64,12 +65,17 @@ export function createAotCompiler(
   const symbolResolver = new StaticSymbolResolver(compilerHost, symbolCache, summaryResolver);
   const staticReflector =
       new StaticReflector(summaryResolver, symbolResolver, [], [], errorCollector);
-  const htmlParser = new I18NHtmlParser(
-      new HtmlParser(), translations, options.i18nFormat, options.missingTranslation, console);
+  let htmlParser: I18NHtmlParser;
+  if (!!options.enableIvy) {
+    // Ivy handles i18n at the compiler level so we must use a regular parser
+    htmlParser = new HtmlParser() as I18NHtmlParser;
+  } else {
+    htmlParser = new I18NHtmlParser(
+        new HtmlParser(), translations, options.i18nFormat, options.missingTranslation, console);
+  }
   const config = new CompilerConfig({
     defaultEncapsulation: ViewEncapsulation.Emulated,
     useJit: false,
-    enableLegacyTemplate: options.enableLegacyTemplate === true,
     missingTranslation: options.missingTranslation,
     preserveWhitespaces: options.preserveWhitespaces,
     strictInjectionParameters: options.strictInjectionParameters,
@@ -90,7 +96,8 @@ export function createAotCompiler(
   const compiler = new AotCompiler(
       config, options, compilerHost, staticReflector, resolver, tmplParser,
       new StyleCompiler(urlResolver), viewCompiler, typeCheckCompiler,
-      new NgModuleCompiler(staticReflector), new TypeScriptEmitter(), summaryResolver,
-      symbolResolver);
+      new NgModuleCompiler(staticReflector),
+      new InjectableCompiler(staticReflector, !!options.enableIvy), new TypeScriptEmitter(),
+      summaryResolver, symbolResolver);
   return {compiler, reflector: staticReflector};
 }

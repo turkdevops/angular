@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -9,12 +9,17 @@
 // THIS CODE IS GENERATED - DO NOT MODIFY
 // See angular/tools/gulp-tasks/cldr/extract.js
 
+const u = undefined;
+
+function plural(n: number): number {
+  if (n === 1) return 1;
+  return 5;
+}
+
 export default [
-  'os-RU', [['AM', 'PM'], , ['ӕмбисбоны размӕ', 'ӕмбисбоны фӕстӕ']],
-  [
-    ['AM', 'PM'],
-    ,
-  ],
+  'os-RU',
+  [['AM', 'PM'], u, ['ӕмбисбоны размӕ', 'ӕмбисбоны фӕстӕ']],
+  [['AM', 'PM'], u, u],
   [
     ['Х', 'К', 'Д', 'Ӕ', 'Ц', 'М', 'С'], ['хцб', 'крс', 'дцг', 'ӕрт', 'цпр', 'мрб', 'сбт'],
     ['хуыцаубон', 'къуырисӕр', 'дыццӕг', 'ӕртыццӕг', 'цыппӕрӕм', 'майрӕмбон', 'сабат'],
@@ -46,21 +51,18 @@ export default [
       'Октябрь', 'Ноябрь', 'Декабрь'
     ]
   ],
-  [
-    ['н.д.а.', 'н.д.'],
-    ,
-  ],
-  1, [6, 0], ['dd.MM.yy', 'dd MMM y \'аз\'', 'd MMMM, y \'аз\'', 'EEEE, d MMMM, y \'аз\''],
+  [['н.д.а.', 'н.д.'], u, u],
+  1,
+  [6, 0],
+  ['dd.MM.yy', 'dd MMM y \'аз\'', 'd MMMM, y \'аз\'', 'EEEE, d MMMM, y \'аз\''],
   ['HH:mm', 'HH:mm:ss', 'HH:mm:ss z', 'HH:mm:ss zzzz'],
-  [
-    '{1}, {0}',
-    ,
-    ,
-  ],
+  ['{1}, {0}', u, u, u],
   [',', ' ', ';', '%', '+', '-', 'E', '×', '‰', '∞', 'НН', ':'],
-  ['#,##0.###', '#,##0%', '¤ #,##0.00', '#E0'], '₽', 'Сом', function(n: number):
-                                                                  number {
-                                                                    if (n === 1) return 1;
-                                                                    return 5;
-                                                                  }
+  ['#,##0.###', '#,##0%', '¤ #,##0.00', '#E0'],
+  'RUB',
+  '₽',
+  'Сом',
+  {'JPY': ['JP¥', '¥'], 'RUB': ['₽']},
+  'ltr',
+  plural
 ];

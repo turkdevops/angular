@@ -1,13 +1,13 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
+import {MetadataOverrider} from '@angular/platform-browser-dynamic/testing/src/metadata_overrider';
 import {expect} from '@angular/platform-browser/testing/src/matchers';
-import {MetadataOverrider} from '../testing/src/metadata_overrider';
 
 interface SomeMetadataType {
   plainProp?: string;
@@ -22,13 +22,16 @@ interface OtherMetadataType extends SomeMetadataType {
 class SomeMetadata implements SomeMetadataType {
   plainProp: string;
   private _getterProp: string;
-  get getterProp(): string { return this._getterProp; }
   arrayProp: any[];
 
   constructor(options: SomeMetadataType) {
-    this.plainProp = options.plainProp !;
-    this._getterProp = options.getterProp !;
-    this.arrayProp = options.arrayProp !;
+    this.plainProp = options.plainProp!;
+    this._getterProp = options.getterProp!;
+    this.arrayProp = options.arrayProp!;
+    Object.defineProperty(this, 'getterProp', {
+      enumerable: true,  // getters are non-enumerable by default in es2015
+      get: () => this._getterProp,
+    });
   }
 }
 
@@ -42,15 +45,17 @@ class OtherMetadata extends SomeMetadata implements OtherMetadataType {
       arrayProp: options.arrayProp
     });
 
-    this.otherPlainProp = options.otherPlainProp !;
+    this.otherPlainProp = options.otherPlainProp!;
   }
 }
 
-export function main() {
+{
   describe('metadata overrider', () => {
     let overrider: MetadataOverrider;
 
-    beforeEach(() => { overrider = new MetadataOverrider(); });
+    beforeEach(() => {
+      overrider = new MetadataOverrider();
+    });
 
     it('should return a new instance with the same values', () => {
       const oldInstance = new SomeMetadata({plainProp: 'somePlainProp', getterProp: 'someInput'});
@@ -127,7 +132,6 @@ export function main() {
         const instance3 =
             overrider.overrideMetadata(SomeMetadata, instance2, {remove: {arrayProp: [Class3]}});
         expect(instance3).toEqual(new SomeMetadata({arrayProp: [Class2]}));
-
       });
     });
 
@@ -146,7 +150,6 @@ export function main() {
           otherPlainProp: 'newOtherProp'
         }));
       });
-
     });
   });
 }

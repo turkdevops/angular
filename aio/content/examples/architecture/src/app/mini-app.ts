@@ -12,7 +12,7 @@ import { Component } from '@angular/core';
 // #enddocregion import-core-component
 
 @Component({
- selector: 'my-app',
+ selector: 'app-root',
  template: 'Welcome to Angular'
 })
 export class AppComponent {
@@ -22,7 +22,7 @@ export class AppComponent {
 }
 
 // #docregion module
-import { NgModule }      from '@angular/core';
+import { NgModule } from '@angular/core';
 // #docregion import-browser-module
 import { BrowserModule } from '@angular/platform-browser';
 // #enddocregion import-browser-module

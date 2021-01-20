@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -9,14 +9,18 @@ const Package = require('dgeni').Package;
 const gitPackage = require('dgeni-packages/git');
 const apiPackage = require('../angular-api-package');
 const contentPackage = require('../angular-content-package');
+const errorsPackage = require('../angular-errors-package');
+const cliDocsPackage = require('../cli-docs-package');
 const { extname, resolve } = require('canonical-path');
 const { existsSync } = require('fs');
 const { SRC_PATH } = require('../config');
 
-module.exports = new Package('angular.io', [gitPackage, apiPackage, contentPackage])
+module.exports = new Package('angular.io', [gitPackage, apiPackage, contentPackage, cliDocsPackage, errorsPackage])
 
   // This processor relies upon the versionInfo. See below...
   .processor(require('./processors/processNavigationMap'))
+  .processor(require('./processors/createOverviewDump'))
+  .processor(require('./processors/cleanGeneratedFiles'))
 
   // We don't include this in the angular-base package because the `versionInfo` stuff
   // accesses the file system and git, which is slow.
@@ -35,7 +39,7 @@ module.exports = new Package('angular.io', [gitPackage, apiPackage, contentPacka
     checkAnchorLinksProcessor.$runBefore = ['convertToJsonProcessor'];
     checkAnchorLinksProcessor.$runAfter = ['fixInternalDocumentLinks'];
     // We only want to check docs that are going to be output as JSON docs.
-    checkAnchorLinksProcessor.checkDoc = (doc) => doc.path && doc.outputPath && extname(doc.outputPath) === '.json';
+    checkAnchorLinksProcessor.checkDoc = (doc) => doc.path && doc.outputPath && extname(doc.outputPath) === '.json' && doc.docType !== 'json-doc';
     // Since we have a `base[href="/"]` arrangement all links are relative to that and not relative to the source document's path
     checkAnchorLinksProcessor.base = '/';
     // Ignore links to local assets

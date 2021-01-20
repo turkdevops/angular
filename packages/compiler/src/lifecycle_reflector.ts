@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -52,5 +52,12 @@ function getHookName(hook: LifecycleHooks): string {
       return 'ngAfterViewInit';
     case LifecycleHooks.AfterViewChecked:
       return 'ngAfterViewChecked';
+    default:
+      // This default case is not needed by TypeScript compiler, as the switch is exhaustive.
+      // However Closure Compiler does not understand that and reports an error in typed mode.
+      // The `throw new Error` below works around the problem, and the unexpected: never variable
+      // makes sure tsc still checks this code is unreachable.
+      const unexpected: never = hook;
+      throw new Error(`unexpected ${unexpected}`);
   }
 }

@@ -1,12 +1,21 @@
+load("//tools:defaults.bzl", "ng_module")
+
 package(default_visibility = ["//visibility:public"])
 
-load("@build_bazel_rules_typescript//:defs.bzl", "ts_library")
+exports_files(["package.json"])
 
-ts_library(
+ng_module(
     name = "testing",
-    testonly = 1,
-    srcs = glob(["**/*.ts"]),
-    module_name = "@angular/compiler/testing",
-    tsconfig = "//packages:tsconfig",
-    deps = ["//packages/compiler"],
+    srcs = glob(
+        ["**/*.ts"],
+        exclude = ["testing.ts"],
+    ),
+    # compiler package is built using ts_library which doesn't support bundling yet.
+    bundle_dts = False,
+    deps = [
+        "//packages:types",
+        "//packages/compiler",
+        "//packages/core",
+        "@npm//@types/node",
+    ],
 )

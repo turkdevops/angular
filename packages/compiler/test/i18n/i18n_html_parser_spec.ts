@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -11,7 +11,7 @@ import {TranslationBundle} from '@angular/compiler/src/i18n/translation_bundle';
 import {HtmlParser} from '@angular/compiler/src/ml_parser/html_parser';
 import {ParseTreeResult} from '@angular/compiler/src/ml_parser/parser';
 
-export function main() {
+{
   describe('I18N html parser', () => {
     // https://github.com/angular/angular/issues/14322
     it('should parse the translations only once', () => {
@@ -26,6 +26,5 @@ export function main() {
       i18nHtmlParser.parse('source', 'url');
       expect(TranslationBundle.load).toHaveBeenCalledTimes(1);
     });
-
   });
 }

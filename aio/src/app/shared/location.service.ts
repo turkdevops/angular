@@ -1,48 +1,60 @@
 import { Injectable } from '@angular/core';
 import { Location, PlatformLocation } from '@angular/common';
 
-import { ReplaySubject } from 'rxjs/ReplaySubject';
-import 'rxjs/add/operator/do';
+import { ReplaySubject } from 'rxjs';
+import { map, tap } from 'rxjs/operators';
 
 import { GaService } from 'app/shared/ga.service';
-import { SwUpdatesService } from 'app/sw-updates/sw-updates.service';
+import { ScrollService } from './scroll.service';
 
 @Injectable()
 export class LocationService {
 
   private readonly urlParser = document.createElement('a');
   private urlSubject = new ReplaySubject<string>(1);
-  private swUpdateActivated = false;
+  private fullPageNavigation = false;
 
   currentUrl = this.urlSubject
-    .map(url => this.stripSlashes(url));
+    .pipe(map(url => this.stripSlashes(url)));
 
-  currentPath = this.currentUrl
-    .map(url => url.match(/[^?#]*/)[0]) // strip query and hash
-    .do(path => this.gaService.locationChanged(path));
+  currentPath = this.currentUrl.pipe(
+    map(url => (url.match(/[^?#]*/) || [])[0]),  // strip query and hash
+    tap(path => this.gaService.locationChanged(path)),
+  );
 
   constructor(
     private gaService: GaService,
     private location: Location,
-    private platformLocation: PlatformLocation,
-    swUpdates: SwUpdatesService) {
+    private scrollService: ScrollService,
+    private platformLocation: PlatformLocation) {
 
     this.urlSubject.next(location.path(true));
 
     this.location.subscribe(state => {
-      return this.urlSubject.next(state.url);
+      return this.urlSubject.next(state.url || '');
     });
-
-    swUpdates.updateActivated.subscribe(() => this.swUpdateActivated = true);
   }
 
-  // TODO?: ignore if url-without-hash-or-search matches current location?
-  go(url: string) {
+  /**
+   * Signify that a full page navigation is needed (instead of a regular in-app navigation).
+   *
+   * This will happen on the next user-initiated navigation.
+   */
+  fullPageNavigationNeeded(): void {
+    this.fullPageNavigation = true;
+  }
+
+  // TODO: ignore if url-without-hash-or-search matches current location?
+  go(url: string|null|undefined) {
     if (!url) { return; }
     url = this.stripSlashes(url);
-    if (/^http/.test(url) || this.swUpdateActivated) {
+    if (/^http/.test(url)) {
       // Has http protocol so leave the site
-      // (or do a "full page navigation" if a ServiceWorker update has been activated)
+      this.goExternal(url);
+    } else if (this.fullPageNavigation) {
+      // Do a "full page navigation".
+      // We need to remove the stored scroll position to ensure we scroll to the top.
+      this.scrollService.removeStoredScrollInfo();
       this.goExternal(url);
     } else {
       this.location.go(url);
@@ -58,12 +70,16 @@ export class LocationService {
     window.location.replace(url);
   }
 
+  reloadPage(): void {
+    window.location.reload();
+  }
+
   private stripSlashes(url: string) {
     return url.replace(/^\/+/, '').replace(/\/+(\?|#|$)/, '$1');
   }
 
-  search(): { [index: string]: string; } {
-    const search = {};
+  search() {
+    const search: { [index: string]: string|undefined; } = {};
     const path = this.location.path();
     const q = path.indexOf('?');
     if (q > -1) {
@@ -80,11 +96,10 @@ export class LocationService {
     return search;
   }
 
-  setSearch(label: string, params: {}) {
+  setSearch(label: string, params: { [key: string]: string|undefined}) {
     const search = Object.keys(params).reduce((acc, key) => {
       const value = params[key];
-      // tslint:disable-next-line:triple-equals
-      return value == undefined ? acc :
+      return (value === undefined) ? acc :
         acc += (acc ? '&' : '?') + `${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
     }, '');
 
@@ -94,7 +109,7 @@ export class LocationService {
   /**
    * Handle user's anchor click
    *
-   * @param anchor {HTMLAnchorElement} - the anchor element clicked
+   * @param anchor The anchor element clicked
    * @param button Number of the mouse button held down. 0 means left or none
    * @param ctrlKey True if control key held down
    * @param metaKey True if command or window key held down
@@ -112,7 +127,6 @@ export class LocationService {
    * `AppComponent`, whose element contains all the of the application and so captures all
    * link clicks both inside and outside the `DocViewerComponent`.
    */
-
   handleAnchorClick(anchor: HTMLAnchorElement, button = 0, ctrlKey = false, metaKey = false) {
 
     // Check for modifier keys and non-left-button, which indicate the user wants to control navigation

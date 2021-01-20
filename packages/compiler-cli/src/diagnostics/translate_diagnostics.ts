@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -16,7 +16,8 @@ export interface TypeCheckHost {
   parseSourceSpanOf(fileName: string, line: number, character: number): ParseSourceSpan|null;
 }
 
-export function translateDiagnostics(host: TypeCheckHost, untranslatedDiagnostics: ts.Diagnostic[]):
+export function translateDiagnostics(
+    host: TypeCheckHost, untranslatedDiagnostics: ReadonlyArray<ts.Diagnostic>):
     {ts: ts.Diagnostic[], ng: Diagnostic[]} {
   const ts: ts.Diagnostic[] = [];
   const ng: Diagnostic[] = [];
@@ -34,7 +35,8 @@ export function translateDiagnostics(host: TypeCheckHost, untranslatedDiagnostic
         const fileName = span.start.file.url;
         ng.push({
           messageText: diagnosticMessageToString(diagnostic.messageText),
-          category: diagnostic.category, span,
+          category: diagnostic.category,
+          span,
           source: SOURCE,
           code: DEFAULT_ERROR_CODE
         });
@@ -52,6 +54,6 @@ function sourceSpanOf(host: TypeCheckHost, source: ts.SourceFile, start: number)
   return host.parseSourceSpanOf(source.fileName, line, character);
 }
 
-function diagnosticMessageToString(message: ts.DiagnosticMessageChain | string): string {
+function diagnosticMessageToString(message: ts.DiagnosticMessageChain|string): string {
   return ts.flattenDiagnosticMessageText(message, '\n');
 }

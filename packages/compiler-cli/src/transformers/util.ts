@@ -1,11 +1,12 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
+import {syntaxError} from '@angular/compiler';
 import * as path from 'path';
 import * as ts from 'typescript';
 
@@ -13,12 +14,25 @@ import {CompilerOptions, DEFAULT_ERROR_CODE, Diagnostic, SOURCE} from './api';
 
 export const GENERATED_FILES = /(.*?)\.(ngfactory|shim\.ngstyle|ngstyle|ngsummary)\.(js|d\.ts|ts)$/;
 export const DTS = /\.d\.ts$/;
+export const TS = /^(?!.*\.d\.ts$).*\.ts$/;
 
-export const enum StructureIsReused {Not = 0, SafeModules = 1, Completely = 2}
+export const enum StructureIsReused {
+  Not = 0,
+  SafeModules = 1,
+  Completely = 2
+}
 
 // Note: This is an internal property in TypeScript. Use it only for assertions and tests.
 export function tsStructureIsReused(program: ts.Program): StructureIsReused {
   return (program as any).structureIsReused;
+}
+
+export function error(msg: string): never {
+  throw new Error(`Internal error: ${msg}`);
+}
+
+export function userError(msg: string): never {
+  throw syntaxError(msg);
 }
 
 export function createMessageDiagnostic(messageText: string): ts.Diagnostic&Diagnostic {
@@ -26,7 +40,8 @@ export function createMessageDiagnostic(messageText: string): ts.Diagnostic&Diag
     file: undefined,
     start: undefined,
     length: undefined,
-    category: ts.DiagnosticCategory.Message, messageText,
+    category: ts.DiagnosticCategory.Message,
+    messageText,
     code: DEFAULT_ERROR_CODE,
     source: SOURCE,
   };
@@ -66,7 +81,7 @@ export function ngToTsDiagnostic(ng: Diagnostic): ts.Diagnostic {
     // Note: We can't use a real ts.SourceFile,
     // but we can at least mirror the properties `fileName` and `text`, which
     // are mostly used for error reporting.
-    file = { fileName: ng.span.start.file.url, text: ng.span.start.file.content } as ts.SourceFile;
+    file = {fileName: ng.span.start.file.url, text: ng.span.start.file.content} as ts.SourceFile;
     start = ng.span.start.offset;
     length = ng.span.end.offset - start;
   }
@@ -74,6 +89,17 @@ export function ngToTsDiagnostic(ng: Diagnostic): ts.Diagnostic {
     file,
     messageText: ng.messageText,
     category: ng.category,
-    code: ng.code, start, length,
+    code: ng.code,
+    start,
+    length,
   };
+}
+
+/**
+ * Strip multiline comment start and end markers from the `commentText` string.
+ *
+ * This will also strip the JSDOC comment start marker (`/**`).
+ */
+export function stripComment(commentText: string): string {
+  return commentText.replace(/^\/\*\*?/, '').replace(/\*\/$/, '').trim();
 }

@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -8,7 +8,7 @@
 
 import {Component, NgModule, OnInit, TemplateRef, ViewChild} from '@angular/core';
 import {BrowserModule} from '@angular/platform-browser';
-import {Subject} from 'rxjs/Subject';
+import {Subject} from 'rxjs';
 
 
 // #docregion NgIfSimple
@@ -21,8 +21,8 @@ import {Subject} from 'rxjs/Subject';
     <div *ngIf="show">Text to show</div>
 `
 })
-class NgIfSimple {
-  show: boolean = true;
+export class NgIfSimple {
+  show = true;
 }
 // #enddocregion
 
@@ -37,8 +37,8 @@ class NgIfSimple {
     <ng-template #elseBlock>Alternate text while primary text is hidden</ng-template>
 `
 })
-class NgIfElse {
-  show: boolean = true;
+export class NgIfElse {
+  show = true;
 }
 // #enddocregion
 
@@ -56,26 +56,26 @@ class NgIfElse {
     <ng-template #elseBlock>Alternate text while primary text is hidden</ng-template>
 `
 })
-class NgIfThenElse implements OnInit {
+export class NgIfThenElse implements OnInit {
   thenBlock: TemplateRef<any>|null = null;
-  show: boolean = true;
+  show = true;
 
-  @ViewChild('primaryBlock')
-  primaryBlock: TemplateRef<any>|null = null;
-  @ViewChild('secondaryBlock')
-  secondaryBlock: TemplateRef<any>|null = null;
+  @ViewChild('primaryBlock', {static: true}) primaryBlock: TemplateRef<any>|null = null;
+  @ViewChild('secondaryBlock', {static: true}) secondaryBlock: TemplateRef<any>|null = null;
 
   switchPrimary() {
     this.thenBlock = this.thenBlock === this.primaryBlock ? this.secondaryBlock : this.primaryBlock;
   }
 
-  ngOnInit() { this.thenBlock = this.primaryBlock; }
+  ngOnInit() {
+    this.thenBlock = this.primaryBlock;
+  }
 }
 // #enddocregion
 
 // #docregion NgIfAs
 @Component({
-  selector: 'ng-if-let',
+  selector: 'ng-if-as',
   template: `
     <button (click)="nextUser()">Next User</button>
     <br>
@@ -85,7 +85,7 @@ class NgIfThenElse implements OnInit {
     <ng-template #loading let-user>Waiting... (user is {{user|json}})</ng-template>
 `
 })
-class NgIfAs {
+export class NgIfAs {
   userObservable = new Subject<{first: string, last: string}>();
   first = ['John', 'Mike', 'Mary', 'Bob'];
   firstIndex = 0;
@@ -112,17 +112,16 @@ class NgIfAs {
     <hr>
     <ng-if-then-else></ng-if-then-else>
     <hr>
-    <ng-if-let></ng-if-let>
+    <ng-if-as></ng-if-as>
     <hr>
 `
 })
-class ExampleApp {
+export class AppComponent {
 }
 
 @NgModule({
   imports: [BrowserModule],
-  declarations: [ExampleApp, NgIfSimple, NgIfElse, NgIfThenElse, NgIfAs],
-  bootstrap: [ExampleApp]
+  declarations: [AppComponent, NgIfSimple, NgIfElse, NgIfThenElse, NgIfAs],
 })
 export class AppModule {
 }

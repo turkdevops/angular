@@ -1,6 +1,6 @@
-import { Injector, ReflectiveInjector } from '@angular/core';
+import { Injector } from '@angular/core';
 import { fakeAsync, tick } from '@angular/core/testing';
-import { DOCUMENT } from '@angular/platform-browser';
+import { DOCUMENT } from '@angular/common';
 
 import { ScrollService } from 'app/shared/scroll.service';
 import { ScrollItem, ScrollSpiedElement, ScrollSpiedElementGroup, ScrollSpyService } from 'app/shared/scroll-spy.service';
@@ -39,7 +39,7 @@ describe('ScrollSpiedElement', () => {
 describe('ScrollSpiedElementGroup', () => {
   describe('#calibrate()', () => {
     it('should calculate `top` for all spied elements', () => {
-      const spy = spyOn(ScrollSpiedElement.prototype, 'calculateTop').and.returnValue(0);
+      const spy = spyOn(ScrollSpiedElement.prototype, 'calculateTop');
       const elems = [{}, {}, {}] as Element[];
       const group = new ScrollSpiedElementGroup(elems);
 
@@ -60,14 +60,15 @@ describe('ScrollSpiedElementGroup', () => {
 
   describe('#onScroll()', () => {
     let group: ScrollSpiedElementGroup;
-    let activeItems: ScrollItem[];
+    let activeItems: (ScrollItem|null)[];
 
     const activeIndices = () => activeItems.map(x => x && x.index);
 
     beforeEach(() => {
       const tops = [50, 150, 100];
 
-      spyOn(ScrollSpiedElement.prototype, 'calculateTop').and.callFake(function(scrollTop, topOffset) {
+      spyOn(ScrollSpiedElement.prototype, 'calculateTop').and.callFake(
+        function(this: ScrollSpiedElement) {
         this.top = tops[this.index];
       });
 
@@ -150,11 +151,11 @@ describe('ScrollSpyService', () => {
   let scrollSpyService: ScrollSpyService;
 
   beforeEach(() => {
-    injector = ReflectiveInjector.resolveAndCreate([
+    injector = Injector.create({providers: [
       { provide: DOCUMENT, useValue: { body: {} } },
       { provide: ScrollService, useValue: { topOffset: 50 } },
-      ScrollSpyService
-    ]);
+      { provide: ScrollSpyService, deps: [DOCUMENT, ScrollService] }
+    ]});
 
     scrollSpyService = injector.get(ScrollSpyService);
   });
@@ -234,7 +235,7 @@ describe('ScrollSpyService', () => {
 
     it('should remember and emit the last active item to new subscribers', () => {
       const items = [{index: 1}, {index: 2}, {index: 3}] as ScrollItem[];
-      let lastActiveItem: ScrollItem | null;
+      let lastActiveItem = null as unknown as ScrollItem|null;
 
       const info = scrollSpyService.spyOn([]);
       const spiedElemGroup = getSpiedElemGroups()[0];

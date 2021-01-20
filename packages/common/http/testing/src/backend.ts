@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -8,9 +8,7 @@
 
 import {HttpBackend, HttpEvent, HttpEventType, HttpRequest} from '@angular/common/http';
 import {Injectable} from '@angular/core';
-import {Observable} from 'rxjs/Observable';
-import {Observer} from 'rxjs/Observer';
-import {startWith} from 'rxjs/operator/startWith';
+import {Observable, Observer} from 'rxjs';
 
 import {HttpTestingController, RequestMatch} from './api';
 import {TestRequest} from './request';
@@ -25,7 +23,7 @@ import {TestRequest} from './request';
  * requests were made and then flush them. In the end, a verify() method asserts
  * that no unexpected requests were made.
  *
- * @stable
+ *
  */
 @Injectable()
 export class HttpClientTestingBackend implements HttpBackend, HttpTestingController {
@@ -41,8 +39,10 @@ export class HttpClientTestingBackend implements HttpBackend, HttpTestingControl
     return new Observable((observer: Observer<any>) => {
       const testReq = new TestRequest(req, observer);
       this.open.push(testReq);
-      observer.next({ type: HttpEventType.Sent } as HttpEvent<any>);
-      return () => { testReq._cancelled = true; };
+      observer.next({type: HttpEventType.Sent} as HttpEvent<any>);
+      return () => {
+        testReq._cancelled = true;
+      };
     });
   }
 
@@ -88,11 +88,23 @@ export class HttpClientTestingBackend implements HttpBackend, HttpTestingControl
     description = description || this.descriptionFromMatcher(match);
     const matches = this.match(match);
     if (matches.length > 1) {
-      throw new Error(
-          `Expected one matching request for criteria "${description}", found ${matches.length} requests.`);
+      throw new Error(`Expected one matching request for criteria "${description}", found ${
+          matches.length} requests.`);
     }
     if (matches.length === 0) {
-      throw new Error(`Expected one matching request for criteria "${description}", found none.`);
+      let message = `Expected one matching request for criteria "${description}", found none.`;
+      if (this.open.length > 0) {
+        // Show the methods and URLs of open requests in the error, for convenience.
+        const requests = this.open
+                             .map(testReq => {
+                               const url = testReq.request.urlWithParams;
+                               const method = testReq.request.method;
+                               return `${method} ${url}`;
+                             })
+                             .join(', ');
+        message += ` Requests received are: ${requests}.`;
+      }
+      throw new Error(message);
     }
     return matches[0];
   }
@@ -106,8 +118,8 @@ export class HttpClientTestingBackend implements HttpBackend, HttpTestingControl
     description = description || this.descriptionFromMatcher(match);
     const matches = this.match(match);
     if (matches.length > 0) {
-      throw new Error(
-          `Expected zero matching requests for criteria "${description}", found ${matches.length}.`);
+      throw new Error(`Expected zero matching requests for criteria "${description}", found ${
+          matches.length}.`);
     }
   }
 

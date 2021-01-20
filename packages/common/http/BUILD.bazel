@@ -1,8 +1,10 @@
+load("//tools:defaults.bzl", "ng_module")
+
 package(default_visibility = ["//visibility:public"])
 
-load("@build_bazel_rules_typescript//:defs.bzl", "ts_library")
+exports_files(["package.json"])
 
-ts_library(
+ng_module(
     name = "http",
     srcs = glob(
         [
@@ -10,11 +12,9 @@ ts_library(
             "src/**/*.ts",
         ],
     ),
-    module_name = "@angular/common/http",
-    tsconfig = "//packages:tsconfig",
     deps = [
         "//packages/common",
         "//packages/core",
-        "@rxjs",
+        "@npm//rxjs",
     ],
 )

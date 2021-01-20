@@ -1,108 +1,165 @@
 # Overview
 
-Many of the documentation pages contain snippets of code examples. We extract these snippets from
-real working example applications, which are stored in subfolders of the `/aio/content/examples`
-folder. Each example can be built and run independently. Each example also provides e2e specs, which
-are run as part of our Travis build tasks, to verify that the examples continue to work as expected,
-as changes are made to the core Angular libraries.
+Many of the documentation pages contain snippets of code examples.
+These snippets are extracted from real working example applications, which are stored in sub-folders of the [aio/content/examples/](.) folder.
+Each example can be built and run independently.
+Each example also provides tests (mostly e2e and occasionally unit tests), which are run as part of our CircleCI `test_docs_examples*` jobs, to verify that the examples continue to work as expected, as changes are made to the core Angular libraries.
 
-In order to build, run and test these examples independently we need to install dependencies into
-their sub-folder. Also there are a number of common boilerplate files that are needed to configure
-each example's project. We maintain these common boilerplate files centrally to reduce the amount
-of effort if one of them needs to change.
+In order to build, run and test these examples independently, you need to install dependencies into their sub-folder.
+Also there are a number of common boilerplate files that are needed to configure each example's project.
+These common boilerplate files are maintained centrally to reduce the amount of effort if one of them needs to change.
+
+> **Note for Windows users**
+>
+> Setting up the examples involves creating some [symbolic links](https://en.wikipedia.org/wiki/Symbolic_link) (see [here](#symlinked-node_modules) for details).
+> On Windows, this requires to either have [Developer Mode enabled](https://blogs.windows.com/windowsdeveloper/2016/12/02/symlinks-windows-10) (supported on Windows 10 or newer) or run the setup commands as administrator.
+
 
 ## Boilerplate overview
 
-As mentioned, many of the documentation pages contain snippets extracted from real example applications.
-To achieve that, all those applications needs to contain a basic boilerplate. E.g. a `node_modules`
-folder, `package.json` with scripts, `system.js` configuration, etc.
+As mentioned above, many of the documentation pages contain snippets extracted from real example applications.
+To achieve that, all those applications need to contain some basic boilerplate, such as a `node_modules/` folder, a `package.json` file with scripts and dependencies, etc.
 
-No one wants to maintain the boilerplate on each example, so the goal of this tool is to provide a
-generic boilerplate that works in all the examples.
+There are also different project types, each with its own boilerplate.
+For example, there are projects based on the Angular CLI, projects that use AngularJS, Custom Elements, i18n, server-side rendering, etc.
+(See the [example configuration section](#example-config) below for more info on how to specify the project type.)
+
+To avoid having to maintain the boilerplate in each example, we use the [example-boilerplate-js](./example-boilerplate.js) script to provide a set of files that works across all the examples of a specific type.
+
 
 ### Boilerplate files
 
-Inside `/aio/tools/examples/shared/boilerplate` you will see all the common boilerplate you can find
-in any Angular application using System.js. This is the boilerplate that will be carried to each example.
+Inside [shared/boilerplate/](./shared/boilerplate) there is a sub-folder with boilerplate files for each of the different project types.
 
-Among these files, there are a few special ones:
+Currently, the following project types are supported:
 
-* **src/systemjs.config.js** - This is the configuration of System.js used to run the example locally.
-* **src/systemjs.config.web.js** - This configuration replaces the previous one on Plunkers.
-* **src/systemjs.config.web.build.js** - Same as the previous one but for using angular's `-builds`
-  versions.
-* **src/systemjs-angular-loader.js** - It is a System.js plugin that removes the need of `moduleId`.
-* **package.json** - This package.json only contains scripts, no dependencies. It contains the
-  different tasks needed to run any example. Doesn't matter if CLI, System.js or Webpack.
-* **plnkr.json** - This file is used by the Plunker tool to generate a plunker for an example. This
-  concrete file is just a placeholder. Authors needs to tweak it for each guide. More at the
-  [plunker docs](../plunker-builder/README.md).
-* **example-config.json** - This file serves as a flag to indicate that the current folder is an
-  example. This concrete file is just a placeholder. More on this later in this readme.
+- `cli`: For example apps based on the Angular CLI. This is the default type and is used in the majority of the examples.
+- `cli-ajs`: For CLI-based examples that also use AngularJS (but not via `@angular/upgrade`).
+- `elements`: For CLI-based examples that also use `@angular/elements`.
+- `getting-started`: For the "Getting started" tutorial. Essentially the same as `cli` but with custom CSS styles.
+- `i18n`: For CLI-based examples that also use internationalization.
+- `schematics`: For CLI-based examples that include a library with schematics.
+- `service-worker`: For CLI-based examples that also use `@angular/service-worker`.
+- `systemjs`: For non-CLI legacy examples using SystemJS. This is deprecated and only used in few examples.
+- `testing`: For CLI-based examples that are related to unit testing.
+- `universal`: For CLI-based examples that also use `@nguniversal/express-engine` for SSR.
 
-### The example-config.json
+There are also the following special folders:
+- `common`: Contains files used in many examples.
+  (See the [next section](#example-config) for info on how to exclude common files in certain examples.)
+- `viewengine/cli`: Additional configuration for running CLI-based examples with `ViewEngine` (the pre-Ivy compiler/renderer).
+  This applies to all CLI-based examples, such as `cli-ajs`, `elements`, `getting-started`, etc.
+- `viewengine/systemjs`: Additional configuration for running SystemJS-based examples with `ViewEngine` (the pre-Ivy compiler/renderer).
 
-So what is this **example-config.json** again? If an author wants to create a new example, say
-`/aio/content/examples/awesome-example`. The author needs to create an empty `example-config.json`
-in that folder. That serves as a flag so this tool will say "Hey, that is an example, let's copy
-all the boilerplate there".
 
-So when the tool runs, it finds **all** the folders with an `example-config.json` file, and puts
-a copy of the boilerplate in those folders.
+<a name="example-config"></a>
+### The `example-config.json`
 
-Normally the file is empty, but we can add information in it, for example:
+Each example is identified by an `example-config.json` configuration file in its root folder.
+This configuration file indicates what type of boilerplate this example needs and how to test it.
+For example:
 
 ```json
 {
-  "build": "build:cli",
-  "run": "serve:cli"
+  "projectType": "cli"
 }
 ```
 
-In this case, this would indicate that this is a CLI example. Won't make any difference on the
-boilerplate, but will be useful for e2e tests (more on this later). Also works as a hint for
-the example to know how is executed.
+The file is expected to contain a JSON object with zero or more of the following properties:
+
+- `projectType: string`: One of the supported project types (see above).
+  Default: `"cli"`
+- `useCommonBoilerplate: boolean`: Whether to include common boilerplate from the [common/](./shared/boilerplate/common) folder.
+  Default: `true`
+
+**SystemJS-only properties:**
+- `build: string`: The npm script to run in order to build the example app.
+  Default: `"build"`
+- `run: string`: The npm script to run in order to serve the example app (so that e2e test can be run against it).
+  Default `"serve:e2e"`
+
+**CLI-only properties:**
+- `tests: object[]`: An array of objects, each specifying a test command. This can be used to run multiple test commands in series (for example, to run unit and e2e tests).
+  The commands are specified as `{cmd: string, args: string[]}` and must be in a format that could be passed to Node.js' `child_process.spawn(cmd, args)`. You can use a special `{PORT}` placeholder, that will be replaced with the port on which the app is served during the actual test.
+  Default:
+
+  ```json
+  [
+    {
+      "cmd": "yarn",
+      "args": [
+        "e2e",
+        "--prod",
+        "--protractor-config=e2e/protractor-puppeteer.conf.js",
+        "--no-webdriver-update",
+        "--port={PORT}"
+      ]
+    }
+  ]
+  ```
+
+An empty `example-config.json` file is equivalent with `{"projectType": "cli"}`.
 
 
-### A node_modules to share
+<a name="symlinked-node_modules"></a>
+### A `node_modules/` to share
 
-With all the boilerplate files in place, the only missing piece are the installed packages. For
-that we have a `/aio/tools/examples/shared/package.json` which contains **all** the packages
-needed to run all the examples.
+With all the boilerplate files in place, the only missing piece is the installed packages.
+For that we have [shared/package.json](./shared/package.json), which contains **all** the packages needed to run any example type.
 
-After installing these dependencies, a `node_modules` will be created at
-`/aio/tools/examples/shared/node_modules`. This folder will be **symlinked** into each example.
-So it is not a copy like the other boilerplate files. This solution works in all OSes. Windows
-may require admin rights.
+Upon installing these dependencies, a [shared/node_modules/](./shared/node_modules) folder is created.
+This folder will be **symlinked** into each example.
+So it is not a copy like the other boilerplate files.
 
-### End to end tests
 
-Each example contains an `e2e-spec.ts` file. We can find all the related configuration files for
-e2e in the `/aio/tools/examples/shared` folder.
+### End-to-end tests
 
-This tool expects all the examples to be build with `npm run build`. If an example is not built
-with that script, the author would need to specify the new build command in the `example-config.json`
-as shown earlier.
+End-to-end infrastructure is slightly different between CLI- and SystemJS-based examples.
 
-### example-boilerplate.js
+For CLI-based examples, create an `app.e2e-spec.ts` file inside the `e2e/` folder.
+This will be picked up by the default testing command (see the [example configuration section](#example-config) above).
+If you are using a custom test command, make sure e2e specs are picked up (if applicable).
 
-This script installs all the dependencies that are shared among all the examples, creates the
-`node_modules` symlinks and copy all the boilerplate files where needed. It won't do anything
-about plunkers nor e2e tests.
+For SystemJS-based examples, create an `e2e-spec.ts` file inside the example root folder.
+These apps will be tested with the following command:
 
-It also contains a function to remove all the boilerplate. It uses a `git clean -xdf` to do
-the job. It will remove all files that don't exist in the git repository, **including any
-new file that you are working on that hasn't been stage yet.** So be sure to save your work
-before removing the boilerplate.
+```sh
+yarn protractor aio/tools/examples/shared/protractor.config.js \
+  --specs=<example-folder>/e2e-spec.ts \
+  --params.appDir=<example-folder>
+```
 
-### run-example-e2e.js
 
-This script will find all the `e2e-spec.ts` files and run them.
+### `example-boilerplate.js`
 
-To not run all tests, you can use the `--filter=name` flag to run the example's e2e that contains
-that name.
+The [example-boilerplate.js](./example-boilerplate.js) script installs the dependencies for all examples, creates the `node_modules/` symlinks and copies the necessary boilerplate files into example folders.
 
-It also has an optional `--setup` flag to run the `example-boilerplate.js` script and install
-the latest `webdriver`.
+It also contains a function to remove all the boilerplate.
+It uses `git clean -xdf` to do the job.
+It will remove all files that are not tracked by git, **including any new files that you are working on that haven't been staged yet.**
+So, be sure to commit your work before removing the boilerplate.
 
-It will create a `/aio/protractor-results-txt` file when it finishes running tests.
+
+### `run-example-e2e.js`
+
+The [run-example-e2e.js](./run-example-e2e.js) script will find and run the e2e tests for all examples.
+Although it only runs e2e tests by default, it can be configured to run any test command (for CLI-based examples) by using the `tests` property of the [example-config.json](#example-config) file.
+It is named `*-e2e` for historical reasons, but it is not limited to running e2e tests.
+
+See [aio/README.md](../../README.md#developer-tasks) for the available command-line options.
+
+Running the script will create an `aio/protractor-results.txt` file with the results of the tests.
+
+### `create-example.js`
+
+The [create-example.js](./create-example.js) script creates a new example under the `aio/content/examples` directory.
+
+You must provide a new name for the example.
+By default the script will place basic scaffold files into the new example (from [shared/example-scaffold](./shared/example-scaffold)).
+But you can also specify the path to a separate CLI project, from which the script will copy files that would not be considered "boilerplate".
+See the [Boilerplate overview](#boilerplate-overview) for more information.
+
+### Updating example dependencies
+
+With every major Angular release, we update the examples to be on the latest version.
+See [UPDATING.md](./UPDATING.md) for instructions.

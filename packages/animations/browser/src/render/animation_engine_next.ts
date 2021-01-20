@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -25,9 +25,11 @@ export class AnimationEngine {
   // this method is designed to be overridden by the code that uses this engine
   public onRemovalComplete = (element: any, context: any) => {};
 
-  constructor(private _driver: AnimationDriver, normalizer: AnimationStyleNormalizer) {
-    this._transitionEngine = new TransitionAnimationEngine(_driver, normalizer);
-    this._timelineEngine = new TimelineAnimationEngine(_driver, normalizer);
+  constructor(
+      private bodyNode: any, private _driver: AnimationDriver,
+      normalizer: AnimationStyleNormalizer) {
+    this._transitionEngine = new TransitionAnimationEngine(bodyNode, _driver, normalizer);
+    this._timelineEngine = new TimelineAnimationEngine(bodyNode, _driver, normalizer);
 
     this._transitionEngine.onRemovalComplete = (element: any, context: any) =>
         this.onRemovalComplete(element, context);
@@ -43,8 +45,8 @@ export class AnimationEngine {
       const ast =
           buildAnimationAst(this._driver, metadata as AnimationMetadata, errors) as TriggerAst;
       if (errors.length) {
-        throw new Error(
-            `The animation trigger "${name}" has failed to build due to the following errors:\n - ${errors.join("\n - ")}`);
+        throw new Error(`The animation trigger "${
+            name}" has failed to build due to the following errors:\n - ${errors.join('\n - ')}`);
       }
       trigger = buildTrigger(name, ast);
       this._triggerCache[cacheKey] = trigger;
@@ -64,8 +66,8 @@ export class AnimationEngine {
     this._transitionEngine.insertNode(namespaceId, element, parent, insertBefore);
   }
 
-  onRemove(namespaceId: string, element: any, context: any): void {
-    this._transitionEngine.removeNode(namespaceId, element, context);
+  onRemove(namespaceId: string, element: any, context: any, isHostElement?: boolean): void {
+    this._transitionEngine.removeNode(namespaceId, element, isHostElement || false, context);
   }
 
   disableAnimations(element: any, disable: boolean) {
@@ -93,12 +95,16 @@ export class AnimationEngine {
     return this._transitionEngine.listen(namespaceId, element, eventName, eventPhase, callback);
   }
 
-  flush(microtaskId: number = -1): void { this._transitionEngine.flush(microtaskId); }
+  flush(microtaskId: number = -1): void {
+    this._transitionEngine.flush(microtaskId);
+  }
 
   get players(): AnimationPlayer[] {
     return (this._transitionEngine.players as AnimationPlayer[])
         .concat(this._timelineEngine.players as AnimationPlayer[]);
   }
 
-  whenRenderingDone(): Promise<any> { return this._transitionEngine.whenRenderingDone(); }
+  whenRenderingDone(): Promise<any> {
+    return this._transitionEngine.whenRenderingDone();
+  }
 }

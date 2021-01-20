@@ -3,7 +3,7 @@
 //
 //   Try: `npm run webdriver:update`
 //
-// AND THEN EVERYTIME ...
+// AND THEN EVERY TIME ...
 //   1. Compile with `tsc`
 //   2. Make sure the test server (e.g., http-server: localhost:8080) is running.
 //   3. ./node_modules/.bin/protractor protractor.config.js
@@ -20,11 +20,12 @@ exports.config = {
 
   // Capabilities to be passed to the webdriver instance.
   capabilities: {
-    'browserName': 'chrome',
-    // For Travis
+    browserName: 'chrome',
     chromeOptions: {
-      binary: process.env.CHROME_BIN
-    }
+      binary: require('puppeteer').executablePath(),
+      // See /integration/README.md#browser-tests for more info on these args
+      args: ['--no-sandbox', '--headless', '--disable-gpu', '--disable-dev-shm-usage', '--hide-scrollbars', '--mute-audio'],
+    },
   },
 
   // Framework to use. Jasmine is recommended.
@@ -66,7 +67,7 @@ exports.config = {
   }
 };
 
-// See http://jasmine.github.io/2.1/custom_reporter.html
+// See https://jasmine.github.io/2.1/custom_reporter.html
 function Reporter(options) {
   var _defaultOutputFile = path.resolve(__dirname, '../../protractor-results.txt');
   options.outputFile = options.outputFile || _defaultOutputFile;

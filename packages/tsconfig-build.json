@@ -9,6 +9,8 @@
     "stripInternal": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
+    "strict": true,
+    "strictPropertyInitialization": true,
     "noFallthroughCasesInSwitch": true,
     "moduleResolution": "node",
     "module": "es2015",
@@ -22,6 +24,11 @@
     // As tsickle will lower decorators before TS, this is not a problem for our build.
     "emitDecoratorMetadata": true,
     "sourceMap": true,
-    "inlineSources": true
+    "inlineSources": true,
+    "importHelpers": true
+  },
+  "bazelOptions": {
+    "suppressTsconfigOverrideWarnings": true,
+    "devmodeTargetOverride": "es5"
   }
 }

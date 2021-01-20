@@ -1,10 +1,8 @@
 /* tslint:disable:forin */
 // #docregion
-import { Component, DoCheck, Input, ViewChild } from '@angular/core';
+import { Component, DoCheck, Input } from '@angular/core';
 
-class Hero {
-  constructor(public name: string) {}
-}
+import { Hero } from './hero';
 
 @Component({
   selector: 'do-check',
@@ -51,8 +49,8 @@ export class DoCheckComponent implements DoCheck {
         this.noChangeCount = 0;
     } else {
         // log that hook was called when there was no relevant change.
-        let count = this.noChangeCount += 1;
-        let noChangeMsg = `DoCheck called ${count}x when no change to hero or power`;
+        const count = this.noChangeCount += 1;
+        const noChangeMsg = `DoCheck called ${count}x when no change to hero or power`;
         if (count === 1) {
           // add new "no change" message
           this.changeLog.push(noChangeMsg);
@@ -69,27 +67,5 @@ export class DoCheckComponent implements DoCheck {
   reset() {
     this.changeDetected = true;
     this.changeLog = [];
-  }
-}
-
-/***************************************/
-
-@Component({
-  selector: 'do-check-parent',
-  templateUrl: './do-check-parent.component.html',
-  styles: ['.parent {background: Lavender}']
-})
-export class DoCheckParentComponent {
-  hero: Hero;
-  power: string;
-  title = 'DoCheck';
-  @ViewChild(DoCheckComponent) childView: DoCheckComponent;
-
-  constructor() { this.reset(); }
-
-  reset() {
-    this.hero = new Hero('Windstorm');
-    this.power = 'sing';
-    if (this.childView) { this.childView.reset(); }
   }
 }

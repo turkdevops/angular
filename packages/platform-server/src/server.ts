@@ -1,17 +1,16 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
 import {ɵAnimationEngine} from '@angular/animations/browser';
-import {PlatformLocation, ɵPLATFORM_SERVER_ID as PLATFORM_SERVER_ID} from '@angular/common';
+import {DOCUMENT, PlatformLocation, ViewportScroller, ɵgetDOM as getDOM, ɵNullViewportScroller as NullViewportScroller, ɵPLATFORM_SERVER_ID as PLATFORM_SERVER_ID} from '@angular/common';
 import {HttpClientModule} from '@angular/common/http';
-import {Injectable, InjectionToken, Injector, NgModule, NgZone, Optional, PLATFORM_ID, PLATFORM_INITIALIZER, PlatformRef, Provider, RendererFactory2, RootRenderer, StaticProvider, Testability, createPlatformFactory, isDevMode, platformCore, ɵALLOW_MULTIPLE_PLATFORMS as ALLOW_MULTIPLE_PLATFORMS} from '@angular/core';
-import {HttpModule} from '@angular/http';
-import {BrowserModule, DOCUMENT, ɵSharedStylesHost as SharedStylesHost, ɵTRANSITION_ID, ɵgetDOM as getDOM} from '@angular/platform-browser';
+import {createPlatformFactory, Injector, NgModule, NgZone, Optional, PLATFORM_ID, PLATFORM_INITIALIZER, platformCore, PlatformRef, Provider, RendererFactory2, StaticProvider, Testability, ɵALLOW_MULTIPLE_PLATFORMS as ALLOW_MULTIPLE_PLATFORMS, ɵsetDocument} from '@angular/core';
+import {BrowserModule, EVENT_MANAGER_PLUGINS, ɵSharedStylesHost as SharedStylesHost} from '@angular/platform-browser';
 import {ɵplatformCoreDynamic as platformCoreDynamic} from '@angular/platform-browser-dynamic';
 import {NoopAnimationsModule, ɵAnimationRendererFactory} from '@angular/platform-browser/animations';
 
@@ -19,6 +18,7 @@ import {DominoAdapter, parseDocument} from './domino_adapter';
 import {SERVER_HTTP_PROVIDERS} from './http';
 import {ServerPlatformLocation} from './location';
 import {PlatformState} from './platform_state';
+import {ServerEventManagerPlugin} from './server_events';
 import {ServerRendererFactory2} from './server_renderer';
 import {ServerStylesHost} from './styles_host';
 import {INITIAL_CONFIG, PlatformConfig} from './tokens';
@@ -41,7 +41,9 @@ export const INTERNAL_SERVER_PLATFORM_PROVIDERS: StaticProvider[] = [
 ];
 
 function initDominoAdapter(injector: Injector) {
-  return () => { DominoAdapter.makeCurrent(); };
+  return () => {
+    DominoAdapter.makeCurrent();
+  };
 }
 
 export function instantiateServerRendererFactory(
@@ -58,20 +60,22 @@ export const SERVER_RENDER_PROVIDERS: Provider[] = [
   },
   ServerStylesHost,
   {provide: SharedStylesHost, useExisting: ServerStylesHost},
+  {provide: EVENT_MANAGER_PLUGINS, multi: true, useClass: ServerEventManagerPlugin},
 ];
 
 /**
  * The ng module for the server.
  *
- * @experimental
+ * @publicApi
  */
 @NgModule({
   exports: [BrowserModule],
-  imports: [HttpModule, HttpClientModule, NoopAnimationsModule],
+  imports: [HttpClientModule, NoopAnimationsModule],
   providers: [
     SERVER_RENDER_PROVIDERS,
     SERVER_HTTP_PROVIDERS,
     {provide: Testability, useValue: null},
+    {provide: ViewportScroller, useClass: NullViewportScroller},
   ],
 })
 export class ServerModule {
@@ -79,23 +83,23 @@ export class ServerModule {
 
 function _document(injector: Injector) {
   let config: PlatformConfig|null = injector.get(INITIAL_CONFIG, null);
-  if (config && config.document) {
-    return parseDocument(config.document, config.url);
-  } else {
-    return getDOM().createHtmlDocument();
-  }
+  const document = config && config.document ? parseDocument(config.document, config.url) :
+                                               getDOM().createHtmlDocument();
+  // Tell ivy about the global document
+  ɵsetDocument(document);
+  return document;
 }
 
 /**
- * @experimental
+ * @publicApi
  */
-export const platformServer =
+export const platformServer: (extraProviders?: StaticProvider[]|undefined) => PlatformRef =
     createPlatformFactory(platformCore, 'server', INTERNAL_SERVER_PLATFORM_PROVIDERS);
 
 /**
  * The server platform that supports the runtime compiler.
  *
- * @experimental
+ * @publicApi
  */
 export const platformDynamicServer =
     createPlatformFactory(platformCoreDynamic, 'serverDynamic', INTERNAL_SERVER_PLATFORM_PROVIDERS);

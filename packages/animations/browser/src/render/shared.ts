@@ -1,14 +1,32 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
-import {AUTO_STYLE, AnimationEvent, AnimationPlayer, NoopAnimationPlayer, ɵAnimationGroupPlayer, ɵPRE_STYLE as PRE_STYLE, ɵStyleData} from '@angular/animations';
+import {AnimationEvent, AnimationPlayer, AUTO_STYLE, NoopAnimationPlayer, ɵAnimationGroupPlayer, ɵPRE_STYLE as PRE_STYLE, ɵStyleData} from '@angular/animations';
 
 import {AnimationStyleNormalizer} from '../../src/dsl/style_normalization/animation_style_normalizer';
 import {AnimationDriver} from '../../src/render/animation_driver';
+
+// We don't include ambient node types here since @angular/animations/browser
+// is meant to target the browser so technically it should not depend on node
+// types. `process` is just declared locally here as a result.
+declare const process: any;
+
+export function isBrowser(): boolean {
+  return (typeof window !== 'undefined' && typeof window.document !== 'undefined');
+}
+
+export function isNode(): boolean {
+  // Checking only for `process` isn't enough to identify whether or not we're in a Node
+  // environment, because Webpack by default will polyfill the `process`. While we can discern
+  // that Webpack polyfilled it by looking at `process.browser`, it's very Webpack-specific and
+  // might not be future-proof. Instead we look at the stringified version of `process` which
+  // is `[object process]` in Node and `[object Object]` when polyfilled.
+  return typeof process !== 'undefined' && {}.toString.call(process) === '[object process]';
+}
 
 export function optimizeGroupPlayer(players: AnimationPlayer[]): AnimationPlayer {
   switch (players.length) {
@@ -71,27 +89,28 @@ export function normalizeKeyframes(
 }
 
 export function listenOnPlayer(
-    player: AnimationPlayer, eventName: string, event: AnimationEvent | undefined,
+    player: AnimationPlayer, eventName: string, event: AnimationEvent|undefined,
     callback: (event: any) => any) {
   switch (eventName) {
     case 'start':
-      player.onStart(() => callback(event && copyAnimationEvent(event, 'start', player.totalTime)));
+      player.onStart(() => callback(event && copyAnimationEvent(event, 'start', player)));
       break;
     case 'done':
-      player.onDone(() => callback(event && copyAnimationEvent(event, 'done', player.totalTime)));
+      player.onDone(() => callback(event && copyAnimationEvent(event, 'done', player)));
       break;
     case 'destroy':
-      player.onDestroy(
-          () => callback(event && copyAnimationEvent(event, 'destroy', player.totalTime)));
+      player.onDestroy(() => callback(event && copyAnimationEvent(event, 'destroy', player)));
       break;
   }
 }
 
 export function copyAnimationEvent(
-    e: AnimationEvent, phaseName?: string, totalTime?: number): AnimationEvent {
+    e: AnimationEvent, phaseName: string, player: AnimationPlayer): AnimationEvent {
+  const totalTime = player.totalTime;
+  const disabled = (player as any).disabled ? true : false;
   const event = makeAnimationEvent(
       e.element, e.triggerName, e.fromState, e.toState, phaseName || e.phaseName,
-      totalTime == undefined ? e.totalTime : totalTime);
+      totalTime == undefined ? e.totalTime : totalTime, disabled);
   const data = (e as any)['_data'];
   if (data != null) {
     (event as any)['_data'] = data;
@@ -101,12 +120,12 @@ export function copyAnimationEvent(
 
 export function makeAnimationEvent(
     element: any, triggerName: string, fromState: string, toState: string, phaseName: string = '',
-    totalTime: number = 0): AnimationEvent {
-  return {element, triggerName, fromState, toState, phaseName, totalTime};
+    totalTime: number = 0, disabled?: boolean): AnimationEvent {
+  return {element, triggerName, fromState, toState, phaseName, totalTime, disabled: !!disabled};
 }
 
 export function getOrSetAsInMap(
-    map: Map<any, any>| {[key: string]: any}, key: any, defaultValue: any) {
+    map: Map<any, any>|{[key: string]: any}, key: any, defaultValue: any) {
   let value: any;
   if (map instanceof Map) {
     value = map.get(key);
@@ -137,25 +156,44 @@ let _query: (element: any, selector: string, multi: boolean) => any[] =
       return [];
     };
 
-if (typeof Element != 'undefined') {
+// Define utility methods for browsers and platform-server(domino) where Element
+// and utility methods exist.
+const _isNode = isNode();
+if (_isNode || typeof Element !== 'undefined') {
   // this is well supported in all browsers
-  _contains = (elm1: any, elm2: any) => { return elm1.contains(elm2) as boolean; };
+  _contains = (elm1: any, elm2: any) => {
+    return elm1.contains(elm2) as boolean;
+  };
 
-  if (Element.prototype.matches) {
-    _matches = (element: any, selector: string) => element.matches(selector);
-  } else {
-    const proto = Element.prototype as any;
-    const fn = proto.matchesSelector || proto.mozMatchesSelector || proto.msMatchesSelector ||
-        proto.oMatchesSelector || proto.webkitMatchesSelector;
-    if (fn) {
-      _matches = (element: any, selector: string) => fn.apply(element, [selector]);
+  _matches = (() => {
+    if (_isNode || Element.prototype.matches) {
+      return (element: any, selector: string) => element.matches(selector);
+    } else {
+      const proto = Element.prototype as any;
+      const fn = proto.matchesSelector || proto.mozMatchesSelector || proto.msMatchesSelector ||
+          proto.oMatchesSelector || proto.webkitMatchesSelector;
+      if (fn) {
+        return (element: any, selector: string) => fn.apply(element, [selector]);
+      } else {
+        return _matches;
+      }
     }
-  }
+  })();
 
   _query = (element: any, selector: string, multi: boolean): any[] => {
     let results: any[] = [];
     if (multi) {
-      results.push(...element.querySelectorAll(selector));
+      // DO NOT REFACTOR TO USE SPREAD SYNTAX.
+      // For element queries that return sufficiently large NodeList objects,
+      // using spread syntax to populate the results array causes a RangeError
+      // due to the call stack limit being reached. `Array.from` can not be used
+      // as well, since NodeList is not iterable in IE 11, see
+      // https://developer.mozilla.org/en-US/docs/Web/API/NodeList
+      // More info is available in #38551.
+      const elems = element.querySelectorAll(selector);
+      for (let i = 0; i < elems.length; i++) {
+        results.push(elems[i]);
+      }
     } else {
       const elm = element.querySelector(selector);
       if (elm) {
@@ -177,15 +215,15 @@ let _IS_WEBKIT = false;
 export function validateStyleProperty(prop: string): boolean {
   if (!_CACHED_BODY) {
     _CACHED_BODY = getBodyNode() || {};
-    _IS_WEBKIT = _CACHED_BODY !.style ? ('WebkitAppearance' in _CACHED_BODY !.style) : false;
+    _IS_WEBKIT = _CACHED_BODY!.style ? ('WebkitAppearance' in _CACHED_BODY!.style) : false;
   }
 
   let result = true;
-  if (_CACHED_BODY !.style && !containsVendorPrefix(prop)) {
-    result = prop in _CACHED_BODY !.style;
+  if (_CACHED_BODY!.style && !containsVendorPrefix(prop)) {
+    result = prop in _CACHED_BODY!.style;
     if (!result && _IS_WEBKIT) {
       const camelProp = 'Webkit' + prop.charAt(0).toUpperCase() + prop.substr(1);
-      result = camelProp in _CACHED_BODY !.style;
+      result = camelProp in _CACHED_BODY!.style;
     }
   }
 
@@ -202,3 +240,12 @@ export function getBodyNode(): any|null {
 export const matchesElement = _matches;
 export const containsElement = _contains;
 export const invokeQuery = _query;
+
+export function hypenatePropsObject(object: {[key: string]: any}): {[key: string]: any} {
+  const newObj: {[key: string]: any} = {};
+  Object.keys(object).forEach(prop => {
+    const newProp = prop.replace(/([a-z])([A-Z])/g, '$1-$2');
+    newObj[newProp] = object[prop];
+  });
+  return newObj;
+}

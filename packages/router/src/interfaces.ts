@@ -1,22 +1,28 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {Observable} from 'rxjs/Observable';
+import {Observable} from 'rxjs';
 
 import {Route} from './config';
 import {ActivatedRouteSnapshot, RouterStateSnapshot} from './router_state';
+import {UrlSegment, UrlTree} from './url_tree';
 
 
 /**
- * @whatItDoes Interface that a class can implement to be a guard deciding if a route can be
- * activated.
+ * @description
  *
- * @howToUse
+ * Interface that a class can implement to be a guard deciding if a route can be activated.
+ * If all guards return `true`, navigation continues. If any guard returns `false`,
+ * navigation is cancelled. If any guard returns a `UrlTree`, the current navigation
+ * is cancelled and a new navigation begins to the `UrlTree` returned from the guard.
+ *
+ * The following example implements a `CanActivate` function that checks whether the
+ * current user has permission to activate the requested route.
  *
  * ```
  * class UserToken {}
@@ -33,17 +39,22 @@ import {ActivatedRouteSnapshot, RouterStateSnapshot} from './router_state';
  *   canActivate(
  *     route: ActivatedRouteSnapshot,
  *     state: RouterStateSnapshot
- *   ): Observable<boolean>|Promise<boolean>|boolean {
+ *   ): Observable<boolean|UrlTree>|Promise<boolean|UrlTree>|boolean|UrlTree {
  *     return this.permissions.canActivate(this.currentUser, route.params.id);
  *   }
  * }
+ * ```
  *
+ * Here, the defined guard function is provided as part of the `Route` object
+ * in the router configuration:
+ *
+ * ```
  * @NgModule({
  *   imports: [
  *     RouterModule.forRoot([
  *       {
  *         path: 'team/:id',
- *         component: TeamCmp,
+ *         component: TeamComponent,
  *         canActivate: [CanActivateTeam]
  *       }
  *     ])
@@ -53,7 +64,7 @@ import {ActivatedRouteSnapshot, RouterStateSnapshot} from './router_state';
  * class AppModule {}
  * ```
  *
- * You can alternatively provide a function with the `canActivate` signature:
+ * You can alternatively provide an in-line function with the `canActivate` signature:
  *
  * ```
  * @NgModule({
@@ -61,7 +72,7 @@ import {ActivatedRouteSnapshot, RouterStateSnapshot} from './router_state';
  *     RouterModule.forRoot([
  *       {
  *         path: 'team/:id',
- *         component: TeamCmp,
+ *         component: TeamComponent,
  *         canActivate: ['canActivateTeam']
  *       }
  *     ])
@@ -76,18 +87,26 @@ import {ActivatedRouteSnapshot, RouterStateSnapshot} from './router_state';
  * class AppModule {}
  * ```
  *
- * @stable
+ * @publicApi
  */
 export interface CanActivate {
   canActivate(route: ActivatedRouteSnapshot, state: RouterStateSnapshot):
-      Observable<boolean>|Promise<boolean>|boolean;
+      Observable<boolean|UrlTree>|Promise<boolean|UrlTree>|boolean|UrlTree;
 }
 
+export type CanActivateFn = (route: ActivatedRouteSnapshot, state: RouterStateSnapshot) =>
+    Observable<boolean|UrlTree>|Promise<boolean|UrlTree>|boolean|UrlTree;
+
 /**
- * @whatItDoes Interface that a class can implement to be a guard deciding if a child route can be
- * activated.
+ * @description
  *
- * @howToUse
+ * Interface that a class can implement to be a guard deciding if a child route can be activated.
+ * If all guards return `true`, navigation continues. If any guard returns `false`,
+ * navigation is cancelled. If any guard returns a `UrlTree`, current navigation
+ * is cancelled and a new navigation begins to the `UrlTree` returned from the guard.
+ *
+ * The following example implements a `CanActivateChild` function that checks whether the
+ * current user has permission to activate the requested child route.
  *
  * ```
  * class UserToken {}
@@ -104,11 +123,16 @@ export interface CanActivate {
  *   canActivateChild(
  *     route: ActivatedRouteSnapshot,
  *     state: RouterStateSnapshot
- *   ): Observable<boolean>|Promise<boolean>|boolean {
+ *   ): Observable<boolean|UrlTree>|Promise<boolean|UrlTree>|boolean|UrlTree {
  *     return this.permissions.canActivate(this.currentUser, route.params.id);
  *   }
  * }
+ * ```
  *
+ * Here, the defined guard function is provided as part of the `Route` object
+ * in the router configuration:
+ *
+ * ```
  * @NgModule({
  *   imports: [
  *     RouterModule.forRoot([
@@ -118,7 +142,7 @@ export interface CanActivate {
  *         children: [
  *           {
  *              path: 'team/:id',
- *              component: Team
+ *              component: TeamComponent
  *           }
  *         ]
  *       }
@@ -129,7 +153,7 @@ export interface CanActivate {
  * class AppModule {}
  * ```
  *
- * You can alternatively provide a function with the `canActivateChild` signature:
+ * You can alternatively provide an in-line function with the `canActivateChild` signature:
  *
  * ```
  * @NgModule({
@@ -141,7 +165,7 @@ export interface CanActivate {
  *         children: [
  *           {
  *             path: 'team/:id',
- *             component: Team
+ *             component: TeamComponent
  *           }
  *         ]
  *       }
@@ -157,18 +181,26 @@ export interface CanActivate {
  * class AppModule {}
  * ```
  *
- * @stable
+ * @publicApi
  */
 export interface CanActivateChild {
   canActivateChild(childRoute: ActivatedRouteSnapshot, state: RouterStateSnapshot):
-      Observable<boolean>|Promise<boolean>|boolean;
+      Observable<boolean|UrlTree>|Promise<boolean|UrlTree>|boolean|UrlTree;
 }
 
+export type CanActivateChildFn = (childRoute: ActivatedRouteSnapshot, state: RouterStateSnapshot) =>
+    Observable<boolean|UrlTree>|Promise<boolean|UrlTree>|boolean|UrlTree;
+
 /**
- * @whatItDoes Interface that a class can implement to be a guard deciding if a route can be
- * deactivated.
+ * @description
  *
- * @howToUse
+ * Interface that a class can implement to be a guard deciding if a route can be deactivated.
+ * If all guards return `true`, navigation continues. If any guard returns `false`,
+ * navigation is cancelled. If any guard returns a `UrlTree`, current navigation
+ * is cancelled and a new navigation begins to the `UrlTree` returned from the guard.
+ *
+ * The following example implements a `CanDeactivate` function that checks whether the
+ * current user has permission to deactivate the requested route.
  *
  * ```
  * class UserToken {}
@@ -177,6 +209,12 @@ export interface CanActivateChild {
  *     return true;
  *   }
  * }
+ * ```
+ *
+ * Here, the defined guard function is provided as part of the `Route` object
+ * in the router configuration:
+ *
+ * ```
  *
  * @Injectable()
  * class CanDeactivateTeam implements CanDeactivate<TeamComponent> {
@@ -187,7 +225,7 @@ export interface CanActivateChild {
  *     currentRoute: ActivatedRouteSnapshot,
  *     currentState: RouterStateSnapshot,
  *     nextState: RouterStateSnapshot
- *   ): Observable<boolean>|Promise<boolean>|boolean {
+ *   ): Observable<boolean|UrlTree>|Promise<boolean|UrlTree>|boolean|UrlTree {
  *     return this.permissions.canDeactivate(this.currentUser, route.params.id);
  *   }
  * }
@@ -197,7 +235,7 @@ export interface CanActivateChild {
  *     RouterModule.forRoot([
  *       {
  *         path: 'team/:id',
- *         component: TeamCmp,
+ *         component: TeamComponent,
  *         canDeactivate: [CanDeactivateTeam]
  *       }
  *     ])
@@ -207,7 +245,7 @@ export interface CanActivateChild {
  * class AppModule {}
  * ```
  *
- * You can alternatively provide a function with the `canDeactivate` signature:
+ * You can alternatively provide an in-line function with the `canDeactivate` signature:
  *
  * ```
  * @NgModule({
@@ -215,7 +253,7 @@ export interface CanActivateChild {
  *     RouterModule.forRoot([
  *       {
  *         path: 'team/:id',
- *         component: TeamCmp,
+ *         component: TeamComponent,
  *         canDeactivate: ['canDeactivateTeam']
  *       }
  *     ])
@@ -231,80 +269,120 @@ export interface CanActivateChild {
  * class AppModule {}
  * ```
  *
- * @stable
+ * @publicApi
  */
 export interface CanDeactivate<T> {
   canDeactivate(
       component: T, currentRoute: ActivatedRouteSnapshot, currentState: RouterStateSnapshot,
-      nextState?: RouterStateSnapshot): Observable<boolean>|Promise<boolean>|boolean;
+      nextState?: RouterStateSnapshot): Observable<boolean|UrlTree>|Promise<boolean|UrlTree>|boolean
+      |UrlTree;
 }
 
+export type CanDeactivateFn<T> =
+    (component: T, currentRoute: ActivatedRouteSnapshot, currentState: RouterStateSnapshot,
+     nextState?: RouterStateSnapshot) =>
+        Observable<boolean|UrlTree>|Promise<boolean|UrlTree>|boolean|UrlTree;
+
 /**
- * @whatItDoes Interface that class can implement to be a data provider.
+ * @description
  *
- * @howToUse
+ * Interface that classes can implement to be a data provider.
+ * A data provider class can be used with the router to resolve data during navigation.
+ * The interface defines a `resolve()` method that is invoked when the navigation starts.
+ * The router waits for the data to be resolved before the route is finally activated.
+ *
+ * The following example implements a `resolve()` method that retrieves the data
+ * needed to activate the requested route.
  *
  * ```
- * class Backend {
- *   fetchTeam(id: string) {
- *     return 'someTeam';
- *   }
- * }
- *
- * @Injectable()
- * class TeamResolver implements Resolve<Team> {
- *   constructor(private backend: Backend) {}
+ * @Injectable({ providedIn: 'root' })
+ * export class HeroResolver implements Resolve<Hero> {
+ *   constructor(private service: HeroService) {}
  *
  *   resolve(
  *     route: ActivatedRouteSnapshot,
  *     state: RouterStateSnapshot
  *   ): Observable<any>|Promise<any>|any {
- *     return this.backend.fetchTeam(route.params.id);
+ *     return this.service.getHero(route.paramMap.get('id'));
  *   }
+ * }
+ * ```
+ *
+ * Here, the defined `resolve()` function is provided as part of the `Route` object
+ * in the router configuration:
+ *
+ * ```
+
+ * @NgModule({
+ *   imports: [
+ *     RouterModule.forRoot([
+ *       {
+ *         path: 'detail/:id',
+ *         component: HeroDetailComponent,
+ *         resolve: {
+ *           hero: HeroResolver
+ *         }
+ *       }
+ *     ])
+ *   ],
+ *   exports: [RouterModule]
+ * })
+ * export class AppRoutingModule {}
+ * ```
+ *
+ * You can alternatively provide an in-line function with the `resolve()` signature:
+ *
+ * ```
+ * export const myHero: Hero = {
+ *   // ...
  * }
  *
  * @NgModule({
  *   imports: [
  *     RouterModule.forRoot([
  *       {
- *         path: 'team/:id',
- *         component: TeamCmp,
+ *         path: 'detail/:id',
+ *         component: HeroComponent,
  *         resolve: {
- *           team: TeamResolver
- *         }
- *       }
- *     ])
- *   ],
- *   providers: [TeamResolver]
- * })
- * class AppModule {}
- * ```
- *
- * You can alternatively provide a function with the `resolve` signature:
- *
- * ```
- * @NgModule({
- *   imports: [
- *     RouterModule.forRoot([
- *       {
- *         path: 'team/:id',
- *         component: TeamCmp,
- *         resolve: {
- *           team: 'teamResolver'
+ *           hero: 'heroResolver'
  *         }
  *       }
  *     ])
  *   ],
  *   providers: [
  *     {
- *       provide: 'teamResolver',
- *       useValue: (route: ActivatedRouteSnapshot, state: RouterStateSnapshot) => 'team'
+ *       provide: 'heroResolver',
+ *       useValue: (route: ActivatedRouteSnapshot, state: RouterStateSnapshot) => myHero
  *     }
  *   ]
  * })
- * class AppModule {}
+ * export class AppModule {}
  * ```
- * @stable
+ *
+ * @usageNotes
+ *
+ * When both guard and resolvers are specified, the resolvers are not executed until
+ * all guards have run and succeeded.
+ * For example, consider the following route configuration:
+ *
+ * ```
+ * {
+ *  path: 'base'
+ *  canActivate: [BaseGuard],
+ *  resolve: {data: BaseDataResolver}
+ *  children: [
+ *   {
+ *     path: 'child',
+ *     guards: [ChildGuard],
+ *     component: ChildComponent,
+ *     resolve: {childData: ChildDataResolver}
+ *    }
+ *  ]
+ * }
+ * ```
+ * The order of execution is: BaseGuard, ChildGuard, BaseDataResolver, ChildDataResolver.
+ *
+ * @publicApi
  */
 export interface Resolve<T> {
   resolve(route: ActivatedRouteSnapshot, state: RouterStateSnapshot): Observable<T>|Promise<T>|T;
@@ -312,15 +390,21 @@ export interface Resolve<T> {
 
 
 /**
- * @whatItDoes Interface that a class can implement to be a guard deciding if a children can be
- * loaded.
+ * @description
  *
- * @howToUse
+ * Interface that a class can implement to be a guard deciding if children can be loaded.
+ * If all guards return `true`, navigation continues. If any guard returns `false`,
+ * navigation is cancelled. If any guard returns a `UrlTree`, current navigation
+ * is cancelled and a new navigation starts to the `UrlTree` returned from the guard.
+ *
+ * The following example implements a `CanLoad` function that decides whether the
+ * current user has permission to load requested child routes.
+ *
  *
  * ```
  * class UserToken {}
  * class Permissions {
- *   canLoadChildren(user: UserToken, id: string): boolean {
+ *   canLoadChildren(user: UserToken, id: string, segments: UrlSegment[]): boolean {
  *     return true;
  *   }
  * }
@@ -329,17 +413,23 @@ export interface Resolve<T> {
  * class CanLoadTeamSection implements CanLoad {
  *   constructor(private permissions: Permissions, private currentUser: UserToken) {}
  *
- *   canLoad(route: Route): Observable<boolean>|Promise<boolean>|boolean {
- *     return this.permissions.canLoadChildren(this.currentUser, route);
+ *   canLoad(route: Route, segments: UrlSegment[]): Observable<boolean>|Promise<boolean>|boolean {
+ *     return this.permissions.canLoadChildren(this.currentUser, route, segments);
  *   }
  * }
+ * ```
+ *
+ * Here, the defined guard function is provided as part of the `Route` object
+ * in the router configuration:
+ *
+ * ```
  *
  * @NgModule({
  *   imports: [
  *     RouterModule.forRoot([
  *       {
  *         path: 'team/:id',
- *         component: TeamCmp,
+ *         component: TeamComponent,
  *         loadChildren: 'team.js',
  *         canLoad: [CanLoadTeamSection]
  *       }
@@ -350,7 +440,7 @@ export interface Resolve<T> {
  * class AppModule {}
  * ```
  *
- * You can alternatively provide a function with the `canLoad` signature:
+ * You can alternatively provide an in-line function with the `canLoad` signature:
  *
  * ```
  * @NgModule({
@@ -358,7 +448,7 @@ export interface Resolve<T> {
  *     RouterModule.forRoot([
  *       {
  *         path: 'team/:id',
- *         component: TeamCmp,
+ *         component: TeamComponent,
  *         loadChildren: 'team.js',
  *         canLoad: ['canLoadTeamSection']
  *       }
@@ -367,13 +457,19 @@ export interface Resolve<T> {
  *   providers: [
  *     {
  *       provide: 'canLoadTeamSection',
- *       useValue: (route: Route) => true
+ *       useValue: (route: Route, segments: UrlSegment[]) => true
  *     }
  *   ]
  * })
  * class AppModule {}
  * ```
  *
- * @stable
+ * @publicApi
  */
-export interface CanLoad { canLoad(route: Route): Observable<boolean>|Promise<boolean>|boolean; }
+export interface CanLoad {
+  canLoad(route: Route, segments: UrlSegment[]):
+      Observable<boolean|UrlTree>|Promise<boolean|UrlTree>|boolean|UrlTree;
+}
+
+export type CanLoadFn = (route: Route, segments: UrlSegment[]) =>
+    Observable<boolean|UrlTree>|Promise<boolean|UrlTree>|boolean|UrlTree;

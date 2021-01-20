@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -21,13 +21,14 @@ const _XMLNS = 'urn:oasis:names:tc:xliff:document:2.0';
 const _DEFAULT_SOURCE_LANG = 'en';
 const _PLACEHOLDER_TAG = 'ph';
 const _PLACEHOLDER_SPANNING_TAG = 'pc';
+const _MARKER_TAG = 'mrk';
 
 const _XLIFF_TAG = 'xliff';
 const _SOURCE_TAG = 'source';
 const _TARGET_TAG = 'target';
 const _UNIT_TAG = 'unit';
 
-// http://docs.oasis-open.org/xliff/xliff-core/v2.0/os/xliff-core-v2.0-os.html
+// https://docs.oasis-open.org/xliff/xliff-core/v2.0/os/xliff-core-v2.0-os.html
 export class Xliff2 extends Serializer {
   write(messages: i18n.Message[], locale: string|null): string {
     const visitor = new _WriteVisitor();
@@ -53,8 +54,8 @@ export class Xliff2 extends Serializer {
 
       message.sources.forEach((source: i18n.MessageSpan) => {
         notes.children.push(new xml.CR(8), new xml.Tag('note', {category: 'location'}, [
-          new xml.Text(
-              `${source.filePath}:${source.startLine}${source.endLine !== source.startLine ? ',' + source.endLine : ''}`)
+          new xml.Text(`${source.filePath}:${source.startLine}${
+              source.endLine !== source.startLine ? ',' + source.endLine : ''}`)
         ]));
       });
 
@@ -104,16 +105,21 @@ export class Xliff2 extends Serializer {
       throw new Error(`xliff2 parse errors:\n${errors.join('\n')}`);
     }
 
-    return {locale: locale !, i18nNodesByMsgId};
+    return {locale: locale!, i18nNodesByMsgId};
   }
 
-  digest(message: i18n.Message): string { return decimalDigest(message); }
+  digest(message: i18n.Message): string {
+    return decimalDigest(message);
+  }
 }
 
 class _WriteVisitor implements i18n.Visitor {
-  private _nextPlaceholderId: number;
+  // TODO(issue/24571): remove '!'.
+  private _nextPlaceholderId!: number;
 
-  visitText(text: i18n.Text, context?: any): xml.Node[] { return [new xml.Text(text.value)]; }
+  visitText(text: i18n.Text, context?: any): xml.Node[] {
+    return [new xml.Text(text.value)];
+  }
 
   visitContainer(container: i18n.Container, context?: any): xml.Node[] {
     const nodes: xml.Node[] = [];
@@ -189,16 +195,19 @@ class _WriteVisitor implements i18n.Visitor {
 
 // Extract messages as xml nodes from the xliff file
 class Xliff2Parser implements ml.Visitor {
-  private _unitMlString: string|null;
-  private _errors: I18nError[];
-  private _msgIdToHtml: {[msgId: string]: string};
+  // TODO(issue/24571): remove '!'.
+  private _unitMlString!: string|null;
+  // TODO(issue/24571): remove '!'.
+  private _errors!: I18nError[];
+  // TODO(issue/24571): remove '!'.
+  private _msgIdToHtml!: {[msgId: string]: string};
   private _locale: string|null = null;
 
   parse(xliff: string, url: string) {
     this._unitMlString = null;
     this._msgIdToHtml = {};
 
-    const xml = new XmlParser().parse(xliff, url, false);
+    const xml = new XmlParser().parse(xliff, url);
 
     this._errors = xml.errors;
     ml.visitAll(this, xml.rootNodes, null);
@@ -237,9 +246,9 @@ class Xliff2Parser implements ml.Visitor {
         break;
 
       case _TARGET_TAG:
-        const innerTextStart = element.startSourceSpan !.end.offset;
-        const innerTextEnd = element.endSourceSpan !.start.offset;
-        const content = element.startSourceSpan !.start.file.content;
+        const innerTextStart = element.startSourceSpan.end.offset;
+        const innerTextEnd = element.endSourceSpan!.start.offset;
+        const content = element.startSourceSpan.start.file.content;
         const innerText = content.slice(innerTextStart, innerTextEnd);
         this._unitMlString = innerText;
         break;
@@ -284,10 +293,11 @@ class Xliff2Parser implements ml.Visitor {
 
 // Convert ml nodes (xliff syntax) to i18n nodes
 class XmlToI18n implements ml.Visitor {
-  private _errors: I18nError[];
+  // TODO(issue/24571): remove '!'.
+  private _errors!: I18nError[];
 
   convert(message: string, url: string) {
-    const xmlIcu = new XmlParser().parse(message, url, true);
+    const xmlIcu = new XmlParser().parse(message, url, {tokenizeExpansionForms: true});
     this._errors = xmlIcu.errors;
 
     const i18nNodes = this._errors.length > 0 || xmlIcu.rootNodes.length == 0 ?
@@ -300,7 +310,9 @@ class XmlToI18n implements ml.Visitor {
     };
   }
 
-  visitText(text: ml.Text, context: any) { return new i18n.Text(text.value, text.sourceSpan); }
+  visitText(text: ml.Text, context: any) {
+    return new i18n.Text(text.value, text.sourceSpan);
+  }
 
   visitElement(el: ml.Element, context: any): i18n.Node[]|null {
     switch (el.name) {
@@ -332,6 +344,8 @@ class XmlToI18n implements ml.Visitor {
               new i18n.Placeholder('', endId, el.sourceSpan));
         }
         break;
+      case _MARKER_TAG:
+        return [].concat(...ml.visitAll(this, el.children));
       default:
         this._addError(el, `Unexpected tag`);
     }

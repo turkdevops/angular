@@ -1,12 +1,12 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {ParamMap, convertToParamMap} from '../src/shared';
+import {convertToParamMap, ParamMap, Params} from '../src/shared';
 
 describe('ParamsMap', () => {
   it('should returns whether a parameter is present', () => {
@@ -38,8 +38,18 @@ describe('ParamsMap', () => {
     expect(map.get('name')).toEqual(null);
   });
 
-  it('should return `[]` when a mulitple valued element is absent', () => {
+  it('should return `[]` when a multiple valued element is absent', () => {
     const map = convertToParamMap({});
     expect(map.getAll('name')).toEqual([]);
   });
+
+  it('should not error when trying to call ParamMap.get function using an object created with Object.create() function',
+     () => {
+       const objectToMap: Params = Object.create(null);
+       objectToMap['single'] = 's';
+       objectToMap['multiple'] = ['m1', 'm2'];
+       const paramMaps: ParamMap = convertToParamMap(objectToMap);
+       expect(() => paramMaps.get('single')).not.toThrow();
+       expect(paramMaps.get('single')).toEqual('s');
+     });
 });

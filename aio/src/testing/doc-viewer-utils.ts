@@ -1,14 +1,14 @@
-import { Component, ComponentRef, NgModule, ViewChild } from '@angular/core';
-import { Title } from '@angular/platform-browser';
+import { Component, NgModule, ViewChild } from '@angular/core';
+import { Title, Meta } from '@angular/platform-browser';
 
-import { Observable } from 'rxjs/Observable';
+import { Observable } from 'rxjs';
 
 import { DocumentContents } from 'app/documents/document.service';
-import { EmbedComponentsService } from 'app/embed-components/embed-components.service';
 import { DocViewerComponent } from 'app/layout/doc-viewer/doc-viewer.component';
 import { Logger } from 'app/shared/logger.service';
 import { TocService } from 'app/shared/toc.service';
 import { MockLogger } from 'testing/logger.service';
+import { ElementsLoader } from 'app/custom-elements/elements-loader';
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -17,14 +17,17 @@ import { MockLogger } from 'testing/logger.service';
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 export class TestDocViewerComponent extends DocViewerComponent {
-  embeddedComponentRefs: ComponentRef<any>[];
   currViewContainer: HTMLElement;
   nextViewContainer: HTMLElement;
 
-  destroyEmbeddedComponents(): void { return null as any; }
-  prepareTitleAndToc(targetElem: HTMLElement, docId: string): () => void { return null as any; }
-  render(doc: DocumentContents): Observable<void> { return null as any; }
-  swapViews(onInsertedCb?: () => void): Observable<void> { return null as any; }
+  // Only used for type-casting; the actual implementation is irrelevant.
+  prepareTitleAndToc(_targetElem: HTMLElement, _docId: string): () => void { return null as any; }
+
+  // Only used for type-casting; the actual implementation is irrelevant.
+  render(_doc: DocumentContents): Observable<void> { return null as any; }
+
+  // Only used for type-casting; the actual implementation is irrelevant.
+  swapViews(_onInsertedCb?: () => void): Observable<void> { return null as any; }
 }
 
 
@@ -38,22 +41,28 @@ export class TestDocViewerComponent extends DocViewerComponent {
   template: '<aio-doc-viewer [doc]="currentDoc">Test Component</aio-doc-viewer>',
 })
 export class TestParentComponent {
-  currentDoc: DocumentContents;
-  @ViewChild(DocViewerComponent) docViewer: DocViewerComponent;
+  currentDoc?: DocumentContents|null;
+  @ViewChild(DocViewerComponent, {static: true}) docViewer: DocViewerComponent;
 }
 
 // Mock services.
-export class MockEmbedComponentsService {
-  embedInto = jasmine.createSpy('EmbedComponentsService#embedInto');
-}
-
 export class MockTitle {
   setTitle = jasmine.createSpy('Title#reset');
+}
+
+export class MockMeta {
+  addTag = jasmine.createSpy('Meta#addTag');
+  removeTag = jasmine.createSpy('Meta#removeTag');
 }
 
 export class MockTocService {
   genToc = jasmine.createSpy('TocService#genToc');
   reset = jasmine.createSpy('TocService#reset');
+}
+
+export class MockElementsLoader {
+  loadContainedCustomElements =
+      jasmine.createSpy('MockElementsLoader#loadContainedCustomElements');
 }
 
 @NgModule({
@@ -63,9 +72,10 @@ export class MockTocService {
   ],
   providers: [
     { provide: Logger, useClass: MockLogger },
-    { provide: EmbedComponentsService, useClass: MockEmbedComponentsService },
     { provide: Title, useClass: MockTitle },
+    { provide: Meta, useClass: MockMeta },
     { provide: TocService, useClass: MockTocService },
+    { provide: ElementsLoader, useClass: MockElementsLoader },
   ],
 })
 export class TestModule { }
@@ -77,7 +87,7 @@ export class TestModule { }
 
 export class ObservableWithSubscriptionSpies<T = void> extends Observable<T> {
   unsubscribeSpies: jasmine.Spy[] = [];
-  subscribeSpy = spyOn(this, 'subscribe').and.callFake((...args) => {
+  subscribeSpy = spyOn(this as Observable<T>, 'subscribe').and.callFake((...args: any[]) => {
     const subscription = super.subscribe(...args);
     const unsubscribeSpy = spyOn(subscription, 'unsubscribe').and.callThrough();
     this.unsubscribeSpies.push(unsubscribeSpy);

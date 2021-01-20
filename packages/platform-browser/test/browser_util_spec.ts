@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -9,9 +9,8 @@
 
 import {BrowserDetection} from '../testing/src/browser_util';
 
-export function main() {
+{
   describe('BrowserDetection', () => {
-
     const browsers = [
       {
         name: 'Chrome',
@@ -49,32 +48,6 @@ export function main() {
         isWebkit: false,
         isIOS7: false,
         isSlow: false,
-        isChromeDesktop: false,
-        isOldChrome: false
-      },
-      {
-        name: 'IE9',
-        ua: 'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0; SLCC2; .NET CLR 2.0.50727)',
-        isFirefox: false,
-        isAndroid: false,
-        isEdge: false,
-        isIE: true,
-        isWebkit: false,
-        isIOS7: false,
-        isSlow: true,
-        isChromeDesktop: false,
-        isOldChrome: false
-      },
-      {
-        name: 'IE10',
-        ua: 'Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.2; WOW64; Trident/6.0; .NET4.0E; .NET4.0C)',
-        isFirefox: false,
-        isAndroid: false,
-        isEdge: false,
-        isIE: true,
-        isWebkit: false,
-        isIOS7: false,
-        isSlow: true,
         isChromeDesktop: false,
         isOldChrome: false
       },
@@ -224,7 +197,7 @@ export function main() {
     ];
 
     browsers.forEach((browser: {[key: string]: any}) => {
-      it(`should detect ${browser[ 'name']}`, () => {
+      it(`should detect ${browser['name']}`, () => {
         const bd = new BrowserDetection(<string>browser['ua']);
         expect(bd.isFirefox).toBe(browser['isFirefox']);
         expect(bd.isAndroid).toBe(browser['isAndroid']);

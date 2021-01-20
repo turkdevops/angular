@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -12,7 +12,7 @@ import {ANNOTATIONS, makeDecorator, makePropDecorator} from '../../src/util/deco
 class DecoratedParent {}
 class DecoratedChild extends DecoratedParent {}
 
-export function main() {
+{
   const TerminalDecorator =
       makeDecorator('TerminalDecorator', (data: any) => ({terminal: true, ...data}));
   const TestDecorator = makeDecorator(
@@ -24,8 +24,7 @@ export function main() {
       const Prop = makePropDecorator('Prop', (value: any) => ({value}));
 
       class TestClass {
-        @Prop('firefox!')
-        watch: any;
+        @Prop('firefox!') watch: any;
       }
 
       const p = reflector.propMetadata(TestClass);

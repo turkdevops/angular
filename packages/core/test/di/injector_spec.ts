@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -10,7 +10,7 @@
 import {Injector} from '@angular/core';
 import {describe, expect, it} from '@angular/core/testing/src/testing_internal';
 
-export function main() {
+{
   describe('Injector.NULL', () => {
     it('should throw if no arg is given', () => {
       expect(() => Injector.NULL.get('someToken'))
@@ -22,7 +22,8 @@ export function main() {
           .toThrowError('NullInjectorError: No provider for someToken!');
     });
 
-    it('should return the default value',
-       () => { expect(Injector.NULL.get('someToken', 'notFound')).toEqual('notFound'); });
+    it('should return the default value', () => {
+      expect(Injector.NULL.get('someToken', 'notFound')).toEqual('notFound');
+    });
   });
 }

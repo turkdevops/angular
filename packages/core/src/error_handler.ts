@@ -1,24 +1,23 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {ERROR_ORIGINAL_ERROR, getDebugContext, getErrorLogger, getOriginalError} from './errors';
+import {getDebugContext, getErrorLogger, getOriginalError} from './errors';
 
 
 
 /**
- * @whatItDoes Provides a hook for centralized exception handling.
- *
- * @description
+ * Provides a hook for centralized exception handling.
  *
  * The default implementation of `ErrorHandler` prints error messages to the `console`. To
  * intercept error handling, write a custom exception handler that replaces this default as
  * appropriate for your app.
  *
+ * @usageNotes
  * ### Example
  *
  * ```
@@ -34,7 +33,7 @@ import {ERROR_ORIGINAL_ERROR, getDebugContext, getErrorLogger, getOriginalError}
  * class MyModule {}
  * ```
  *
- * @stable
+ * @publicApi
  */
 export class ErrorHandler {
   /**
@@ -77,12 +76,4 @@ export class ErrorHandler {
 
     return e;
   }
-}
-
-export function wrappedError(message: string, originalError: any): Error {
-  const msg =
-      `${message} caused by: ${originalError instanceof Error ? originalError.message: originalError }`;
-  const error = Error(msg);
-  (error as any)[ERROR_ORIGINAL_ERROR] = originalError;
-  return error;
 }

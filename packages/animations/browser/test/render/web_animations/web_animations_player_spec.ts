@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -8,12 +8,14 @@
 import {DOMAnimation} from '../../../src/render/web_animations/dom_animation';
 import {WebAnimationsPlayer} from '../../../src/render/web_animations/web_animations_player';
 
-export function main() {
+{
   let element: any;
   let innerPlayer: MockDomAnimation|null = null;
   beforeEach(() => {
     element = {};
-    element['animate'] = () => { return innerPlayer = new MockDomAnimation(); };
+    element['animate'] = () => {
+      return innerPlayer = new MockDomAnimation();
+    };
   });
 
   describe('WebAnimationsPlayer tests', () => {
@@ -26,29 +28,11 @@ export function main() {
       const player = new WebAnimationsPlayer(element, keyframes, {duration: 1000});
 
       player.init();
-      const p = innerPlayer !;
+      const p = innerPlayer!;
       expect(p.log).toEqual(['pause']);
 
       player.play();
       expect(p.log).toEqual(['pause', 'play']);
-    });
-
-    it('should allow an empty set of keyframes with a set of previous styles', () => {
-      const previousKeyframes = [
-        {opacity: 0, offset: 0},
-        {opacity: 1, offset: 1},
-      ];
-
-      const previousPlayer = new WebAnimationsPlayer(element, previousKeyframes, {duration: 1000});
-      previousPlayer.play();
-      previousPlayer.finish();
-      previousPlayer.beforeDestroy();
-
-      const EMPTY_KEYFRAMES: any[] = [];
-      const player =
-          new WebAnimationsPlayer(element, EMPTY_KEYFRAMES, {duration: 1000}, [previousPlayer]);
-      player.play();
-      player.destroy();
     });
 
     it('should not pause the player if created and started before initialized', () => {
@@ -60,7 +44,7 @@ export function main() {
       const player = new WebAnimationsPlayer(element, keyframes, {duration: 1000});
 
       player.play();
-      const p = innerPlayer !;
+      const p = innerPlayer!;
       expect(p.log).toEqual(['play']);
     });
 
@@ -88,10 +72,18 @@ export function main() {
 
 class MockDomAnimation implements DOMAnimation {
   log: string[] = [];
-  cancel(): void { this.log.push('cancel'); }
-  play(): void { this.log.push('play'); }
-  pause(): void { this.log.push('pause'); }
-  finish(): void { this.log.push('finish'); }
+  cancel(): void {
+    this.log.push('cancel');
+  }
+  play(): void {
+    this.log.push('play');
+  }
+  pause(): void {
+    this.log.push('pause');
+  }
+  finish(): void {
+    this.log.push('finish');
+  }
   onfinish: Function = () => {};
   position: number = 0;
   currentTime: number = 0;

@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -13,11 +13,11 @@ import {SourceMap} from '@angular/compiler/src/output/source_map';
 import {TypeScriptEmitter} from '@angular/compiler/src/output/ts_emitter';
 import {ParseSourceSpan} from '@angular/compiler/src/parse_util';
 
-import {extractSourceMap, originalPositionFor} from './source_map_util';
+import {extractSourceMap, originalPositionFor} from '@angular/compiler/testing/src/output/source_map_util';
 
 const someGenFilePath = 'somePackage/someGenFile';
 
-export function main() {
+{
   // Not supported features of our OutputAst in TS:
   // - real `const` like in Dart
   // - final fields
@@ -31,10 +31,10 @@ export function main() {
       someVar = o.variable('someVar');
     });
 
-    function emitSourceMap(stmt: o.Statement | o.Statement[], preamble?: string): SourceMap {
+    function emitSourceMap(stmt: o.Statement|o.Statement[], preamble?: string): SourceMap {
       const stmts = Array.isArray(stmt) ? stmt : [stmt];
       const source = emitter.emitStatements(someGenFilePath, stmts, preamble);
-      return extractSourceMap(source) !;
+      return extractSourceMap(source)!;
     }
 
     describe('source maps', () => {

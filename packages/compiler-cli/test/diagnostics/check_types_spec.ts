@@ -1,18 +1,18 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
-
+/// <reference types="node" />
 import * as ng from '@angular/compiler-cli';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as ts from 'typescript';
 
-import {TestSupport, expectNoDiagnostics, setup} from '../test_support';
+import {expectNoDiagnostics, setup, TestSupport} from '../test_support';
 
 type MockFiles = {
   [fileName: string]: string
@@ -48,19 +48,19 @@ describe('ng type checker', () => {
   }
 
   function reject(
-      message: string | RegExp, location: RegExp | null, files: MockFiles,
+      message: string|RegExp, location: RegExp|null, files: MockFiles,
       overrideOptions: ng.CompilerOptions = {}) {
     const diagnostics = compileAndCheck([QUICKSTART, files], overrideOptions);
     if (!diagnostics || !diagnostics.length) {
       throw new Error('Expected a diagnostic error message');
     } else {
-      const matches: (d: ng.Diagnostic) => boolean = typeof message === 'string' ?
+      const matches: (d: ng.Diagnostic|ts.Diagnostic) => boolean = typeof message === 'string' ?
           d => ng.isNgDiagnostic(d)&& d.messageText == message :
           d => ng.isNgDiagnostic(d) && message.test(d.messageText);
       const matchingDiagnostics = diagnostics.filter(matches) as ng.Diagnostic[];
       if (!matchingDiagnostics || !matchingDiagnostics.length) {
-        throw new Error(
-            `Expected a diagnostics matching ${message}, received\n  ${diagnostics.map(d => d.messageText).join('\n  ')}`);
+        throw new Error(`Expected a diagnostics matching ${message}, received\n  ${
+            diagnostics.map(d => d.messageText).join('\n  ')}`);
       }
 
       if (location) {
@@ -73,7 +73,9 @@ describe('ng type checker', () => {
     }
   }
 
-  it('should accept unmodified QuickStart', () => { accept(); });
+  it('should accept unmodified QuickStart', () => {
+    accept();
+  });
 
   it('should accept unmodified QuickStart with tests for unused variables', () => {
     accept({}, {
@@ -84,7 +86,7 @@ describe('ng type checker', () => {
   });
 
   describe('type narrowing', () => {
-    const a = (files: MockFiles, options: object = {}) => {
+    const a = (files: MockFiles, options: ng.AngularCompilerOptions = {}) => {
       accept(files, {fullTemplateTypeCheck: true, ...options});
     };
 
@@ -517,15 +519,15 @@ describe('ng type checker', () => {
   });
 
   describe('casting $any', () => {
-    const a = (files: MockFiles, options: object = {}) => {
+    const a = (files: MockFiles, options: ng.AngularCompilerOptions = {}) => {
       accept(
           {'src/app.component.ts': '', 'src/lib.ts': '', ...files},
           {fullTemplateTypeCheck: true, ...options});
     };
 
     const r =
-        (message: string | RegExp, location: RegExp | null, files: MockFiles,
-         options: object = {}) => {
+        (message: string|RegExp, location: RegExp|null, files: MockFiles,
+         options: ng.AngularCompilerOptions = {}) => {
           reject(
               message, location, {'src/app.component.ts': '', 'src/lib.ts': '', ...files},
               {fullTemplateTypeCheck: true, ...options});
@@ -620,12 +622,12 @@ describe('ng type checker', () => {
     });
   });
 
-  describe('regressions ', () => {
-    const a = (files: MockFiles, options: object = {}) => {
+  describe('core', () => {
+    const a = (files: MockFiles, options: ng.AngularCompilerOptions = {}) => {
       accept(files, {fullTemplateTypeCheck: true, ...options});
     };
 
-    // #19905
+    // Regression #19905
     it('should accept an event binding', () => {
       a({
         'src/app.component.ts': '',
@@ -649,6 +651,38 @@ describe('ng type checker', () => {
 
         @NgModule({
           declarations: [MainComp, SomeDirective],
+        })
+        export class MainModule {}`
+      });
+    });
+  });
+
+  describe('common', () => {
+    const a = (files: MockFiles, options: ng.AngularCompilerOptions = {}) => {
+      accept(files, {fullTemplateTypeCheck: true, ...options});
+    };
+
+    // Regression #19905
+    it('should accept a |undefined or |null parameter for async_pipe', () => {
+      a({
+        'src/app.component.ts': '',
+        'src/lib.ts': '',
+        'src/app.module.ts': `
+        import {NgModule, Component} from '@angular/core';
+        import {CommonModule} from '@angular/common';
+
+        @Component({
+          selector: 'comp',
+          template: '<div>{{ name | async}}</div>'
+        })
+        export class MainComp {
+          name: Promise<string>|undefined;
+        }
+
+
+        @NgModule({
+          declarations: [MainComp],
+          imports: [CommonModule]
         })
         export class MainModule {}`
       });
@@ -681,16 +715,18 @@ describe('ng type checker', () => {
   });
 
   function addTests(config: {fullTemplateTypeCheck: boolean}) {
-    function a(template: string) { accept({'src/app.component.html': template}, config); }
+    function a(template: string) {
+      accept({'src/app.component.html': template}, config);
+    }
 
-    function r(template: string, message: string | RegExp, location: string) {
+    function r(template: string, message: string|RegExp, location: string) {
       reject(
           message, new RegExp(`app\.component\.html\@${location}$`),
           {'src/app.component.html': template}, config);
     }
 
     function rejectOnlyWithFullTemplateTypeCheck(
-        template: string, message: string | RegExp, location: string) {
+        template: string, message: string|RegExp, location: string) {
       if (config.fullTemplateTypeCheck) {
         r(template, message, location);
       } else {
@@ -701,23 +737,33 @@ describe('ng type checker', () => {
     it('should report an invalid field access', () => {
       r('<div>{{fame}}<div>', `Property 'fame' does not exist on type 'AppComponent'.`, '0:5');
     });
-    it('should reject a reference to a field of a nullable',
-       () => { r('<div>{{maybePerson.name}}</div>', `Object is possibly 'undefined'.`, '0:5'); });
-    it('should accept a reference to a field of a nullable using using non-null-assert',
-       () => { a('{{maybePerson!.name}}'); });
-    it('should accept a safe property access of a nullable person',
-       () => { a('{{maybePerson?.name}}'); });
+    it('should reject a reference to a field of a nullable', () => {
+      r('<div>{{maybePerson.name}}</div>', `Object is possibly 'undefined'.`, '0:5');
+    });
+    it('should accept a reference to a field of a nullable using using non-null-assert', () => {
+      a('{{maybePerson!.name}}');
+    });
+    it('should accept a safe property access of a nullable person', () => {
+      a('{{maybePerson?.name}}');
+    });
 
-    it('should accept using a library pipe', () => { a('{{1 | libPipe}}'); });
-    it('should accept using a library directive',
-       () => { a('<div libDir #libDir="libDir">{{libDir.name}}</div>'); });
+    it('should accept using a library pipe', () => {
+      a('{{1 | libPipe}}');
+    });
+    it('should accept using a library directive', () => {
+      a('<div libDir #libDir="libDir">{{libDir.name}}</div>');
+    });
 
-    it('should accept a function call', () => { a('{{getName()}}'); });
+    it('should accept a function call', () => {
+      a('{{getName()}}');
+    });
     it('should reject an invalid method', () => {
       r('<div>{{getFame()}}</div>',
         `Property 'getFame' does not exist on type 'AppComponent'. Did you mean 'getName'?`, '0:5');
     });
-    it('should accept a field access of a method result', () => { a('{{getPerson().name}}'); });
+    it('should accept a field access of a method result', () => {
+      a('{{getPerson().name}}');
+    });
     it('should reject an invalid field reference of a method result', () => {
       r('<div>{{getPerson().fame}}</div>', `Property 'fame' does not exist on type 'Person'.`,
         '0:5');
@@ -725,10 +771,13 @@ describe('ng type checker', () => {
     it('should reject an access to a nullable field of a method result', () => {
       r('<div>{{getMaybePerson().name}}</div>', `Object is possibly 'undefined'.`, '0:5');
     });
-    it('should accept a nullable assert of a nullable field refernces of a method result',
-       () => { a('{{getMaybePerson()!.name}}'); });
+    it('should accept a nullable assert of a nullable field references of a method result', () => {
+      a('{{getMaybePerson()!.name}}');
+    });
     it('should accept a safe property access of a nullable field reference of a method result',
-       () => { a('{{getMaybePerson()?.name}}'); });
+       () => {
+         a('{{getMaybePerson()?.name}}');
+       });
 
     it('should report an invalid field access inside of an ng-template', () => {
       rejectOnlyWithFullTemplateTypeCheck(
@@ -738,13 +787,7 @@ describe('ng type checker', () => {
     it('should report an invalid call to a pipe', () => {
       rejectOnlyWithFullTemplateTypeCheck(
           '<div>{{"hello" | aPipe}}</div>',
-          `Argument of type '"hello"' is not assignable to parameter of type 'number'.`, '0:5');
-    });
-    it('should report an index into a map expression', () => {
-      rejectOnlyWithFullTemplateTypeCheck(
-          '<div>{{ {a: 1}[name] }}</div>',
-          `Element implicitly has an 'any' type because type '{ a: number; }' has no index signature.`,
-          '0:5');
+          `Argument of type 'string' is not assignable to parameter of type 'number'.`, '0:5');
     });
     it('should report an invalid property on an exportAs directive', () => {
       rejectOnlyWithFullTemplateTypeCheck(
@@ -754,8 +797,9 @@ describe('ng type checker', () => {
   }
 
   describe('with lowered expressions', () => {
-    it('should not report lowered expressions as errors',
-       () => { expectNoDiagnostics({}, compileAndCheck([LOWERING_QUICKSTART])); });
+    it('should not report lowered expressions as errors', () => {
+      expectNoDiagnostics({}, compileAndCheck([LOWERING_QUICKSTART]));
+    });
   });
 });
 

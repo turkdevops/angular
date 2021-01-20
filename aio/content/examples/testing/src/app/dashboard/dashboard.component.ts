@@ -1,6 +1,6 @@
 // #docregion
 import { Component, OnInit } from '@angular/core';
-import { Router }            from '@angular/router';
+import { Router } from '@angular/router';
 
 import { Hero } from '../model/hero';
 import { HeroService } from '../model/hero.service';
@@ -23,18 +23,18 @@ export class DashboardComponent implements OnInit {
 
   ngOnInit() {
     this.heroService.getHeroes()
-      .then(heroes => this.heroes = heroes.slice(1, 5));
+      .subscribe(heroes => this.heroes = heroes.slice(1, 5));
   }
 
   // #docregion goto-detail
   gotoDetail(hero: Hero) {
-    let url = `/heroes/${hero.id}`;
+    const url = `/heroes/${hero.id}`;
     this.router.navigateByUrl(url);
   }
   // #enddocregion goto-detail
 
   get title() {
-    let cnt = this.heroes.length;
+    const cnt = this.heroes.length;
     return cnt === 0 ? 'No Heroes' :
       cnt === 1 ? 'Top Hero' :  `Top ${cnt} Heroes`;
   }

@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright Google Inc. All Rights Reserved.
+ * Copyright Google LLC All Rights Reserved.
  *
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
@@ -11,8 +11,8 @@ import {DefaultKeyValueDiffer, DefaultKeyValueDifferFactory} from '@angular/core
 import {kvChangesAsString, testChangesAsString} from '../../change_detection/util';
 
 
-// todo(vicb): Update the code & tests for object equality
-export function main() {
+// TODO(vicb): Update the code & tests for object equality
+{
   describe('keyvalue differ', function() {
     describe('DefaultKeyValueDiffer', function() {
       let differ: DefaultKeyValueDiffer<any, any>;
@@ -23,7 +23,9 @@ export function main() {
         m = new Map();
       });
 
-      afterEach(() => { differ = null !; });
+      afterEach(() => {
+        differ = null!;
+      });
 
       it('should detect additions', () => {
         differ.check(m);
@@ -66,7 +68,6 @@ export function main() {
           expect(record.previousValue).toEqual(10);
           expect(record.currentValue).toEqual(20);
         });
-
       });
 
       it('should do basic map watching', () => {
@@ -183,7 +184,6 @@ export function main() {
             previous: ['a[A->null]', 'd[D->null]'],
             removals: ['a[A->null]', 'd[D->null]']
           }));
-
         });
 
         it('should work regardless key order', () => {
@@ -221,7 +221,6 @@ export function main() {
             removals: ['b[b->null]']
           }));
         });
-
       });
 
       describe('diff', () => {
