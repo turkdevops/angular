@@ -6,11 +6,14 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {AST, TmplAstBoundEvent, TmplAstNode} from '@angular/compiler';
+import {AbsoluteSourceSpan, AST, ParseSourceSpan, TmplAstBoundEvent, TmplAstNode} from '@angular/compiler';
 import {CompilerOptions, ConfigurationHost, readConfiguration} from '@angular/compiler-cli';
+import {NgCompiler} from '@angular/compiler-cli/src/ngtsc/core';
+import {ErrorCode, ngErrorCode} from '@angular/compiler-cli/src/ngtsc/diagnostics';
 import {absoluteFrom, absoluteFromSourceFile, AbsoluteFsPath} from '@angular/compiler-cli/src/ngtsc/file_system';
 import {TypeCheckShimGenerator} from '@angular/compiler-cli/src/ngtsc/typecheck';
 import {OptimizeFor, TypeCheckingProgramStrategy} from '@angular/compiler-cli/src/ngtsc/typecheck/api';
+import {findFirstMatchingNode} from '@angular/compiler-cli/src/ngtsc/typecheck/src/comments';
 import * as ts from 'typescript/lib/tsserverlibrary';
 
 import {LanguageServiceAdapter, LSParseConfigHost} from './adapters';
@@ -22,6 +25,25 @@ import {ReferencesAndRenameBuilder} from './references';
 import {getTargetAtPosition, TargetContext, TargetNodeKind} from './template_target';
 import {getTemplateInfoAtPosition, isTypeScriptFile} from './utils';
 
+export type GetTcbResponse = {
+  /**
+   * The filename of the SourceFile this typecheck block belongs to.
+   * The filename is entirely opaque and unstable, useful only for debugging
+   * purposes.
+   */
+  fileName: string,
+  /** The content of the SourceFile this typecheck block belongs to. */
+  content: string,
+  /**
+   * Spans over node(s) in the typecheck block corresponding to the
+   * TS code generated for template node under the current cursor position.
+   *
+   * When the cursor position is over a source for which there is no generated
+   * code, `selections` is empty.
+   */
+  selections: ts.TextSpan[],
+}|undefined;
+
 export class LanguageService {
   private options: CompilerOptions;
   readonly compilerFactory: CompilerFactory;
@@ -29,7 +51,8 @@ export class LanguageService {
   private readonly adapter: LanguageServiceAdapter;
   private readonly parseConfigHost: LSParseConfigHost;
 
-  constructor(project: ts.server.Project, private readonly tsLS: ts.LanguageService) {
+  constructor(
+      private readonly project: ts.server.Project, private readonly tsLS: ts.LanguageService) {
     this.parseConfigHost = new LSParseConfigHost(project.projectService.host);
     this.options = parseNgCompilerOptions(project, this.parseConfigHost);
     logCompilerOptions(project, this.options);
@@ -193,6 +216,86 @@ export class LanguageService {
     const result = builder.getCompletionEntrySymbol(entryName);
     this.compilerFactory.registerLastKnownProgram();
     return result;
+  }
+
+  getTcb(fileName: string, position: number): GetTcbResponse {
+    return this.withCompiler<GetTcbResponse>(fileName, compiler => {
+      const templateInfo = getTemplateInfoAtPosition(fileName, position, compiler);
+      if (templateInfo === undefined) {
+        return undefined;
+      }
+      const tcb = compiler.getTemplateTypeChecker().getTypeCheckBlock(templateInfo.component);
+      if (tcb === null) {
+        return undefined;
+      }
+      const sf = tcb.getSourceFile();
+
+      let selections: ts.TextSpan[] = [];
+      const target = getTargetAtPosition(templateInfo.template, position);
+      if (target !== null) {
+        let selectionSpans: Array<ParseSourceSpan|AbsoluteSourceSpan>;
+        if ('nodes' in target.context) {
+          selectionSpans = target.context.nodes.map(n => n.sourceSpan);
+        } else {
+          selectionSpans = [target.context.node.sourceSpan];
+        }
+        const selectionNodes: ts.Node[] =
+            selectionSpans
+                .map(s => findFirstMatchingNode(tcb, {
+                       withSpan: s,
+                       filter: (node: ts.Node): node is ts.Node => true,
+                     }))
+                .filter((n): n is ts.Node => n !== null);
+
+        selections = selectionNodes.map(n => {
+          return {
+            start: n.getStart(sf),
+            length: n.getEnd() - n.getStart(sf),
+          };
+        });
+      }
+
+      return {
+        fileName: sf.fileName,
+        content: sf.getFullText(),
+        selections,
+      };
+    });
+  }
+
+  private withCompiler<T>(fileName: string, p: (compiler: NgCompiler) => T): T {
+    const compiler = this.compilerFactory.getOrCreateWithChangedFile(fileName);
+    const result = p(compiler);
+    this.compilerFactory.registerLastKnownProgram();
+    return result;
+  }
+
+  getCompilerOptionsDiagnostics(): ts.Diagnostic[] {
+    const project = this.project;
+    if (!(project instanceof ts.server.ConfiguredProject)) {
+      return [];
+    }
+
+    const diagnostics: ts.Diagnostic[] = [];
+    const configSourceFile = ts.readJsonConfigFile(
+        project.getConfigFilePath(), (path: string) => project.readFile(path));
+
+    if (!this.options.strictTemplates && !this.options.fullTemplateTypeCheck) {
+      diagnostics.push({
+        messageText: 'Some language features are not available. ' +
+            'To access all features, enable `strictTemplates` in `angularCompilerOptions`.',
+        category: ts.DiagnosticCategory.Suggestion,
+        code: ngErrorCode(ErrorCode.SUGGEST_STRICT_TEMPLATES),
+        file: configSourceFile,
+        start: undefined,
+        length: undefined,
+      });
+    }
+
+    const compiler = this.compilerFactory.getOrCreate();
+    diagnostics.push(...compiler.getOptionDiagnostics());
+
+    return diagnostics;
   }
 
   private watchConfigFile(project: ts.server.Project) {

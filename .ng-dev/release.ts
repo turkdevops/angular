@@ -32,4 +32,5 @@ export const release: ReleaseConfig = {
   generateReleaseNotesForHead: async () => {
     exec('yarn -s gulp changelog', {cwd: join(__dirname, '../')});
   },
+  releasePrLabels: ['comp: build & ci', 'action: merge', 'PullApprove: disable'],
 };
