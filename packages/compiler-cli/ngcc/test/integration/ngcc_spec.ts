@@ -25,6 +25,7 @@ import {DirectPackageJsonUpdater, PackageJsonUpdater} from '../../src/writing/pa
 
 import {compileIntoApf, compileIntoFlatEs2015Package, compileIntoFlatEs5Package} from './util';
 
+const ANGULAR_CORE_IMPORT_REGEX = /import \* as ɵngcc\d+ from '@angular\/core';/;
 const testFiles = loadStandardTestFiles({fakeCore: false, rxjs: true});
 
 runInEachFileSystem(() => {
@@ -63,7 +64,7 @@ runInEachFileSystem(() => {
     function setupAngularCoreEsm5() {
       const pkgPath = _('/node_modules/@angular/core');
       const pkgJsonPath = fs.join(pkgPath, 'package.json');
-      const pkgJson = JSON.parse(fs.readFile(pkgJsonPath));
+      const pkgJson = JSON.parse(fs.readFile(pkgJsonPath)) as EntryPointPackageJson;
 
       fs.ensureDir(fs.join(pkgPath, 'fesm5'));
       fs.writeFile(
@@ -151,6 +152,85 @@ runInEachFileSystem(() => {
 
       expect(loadPackage('@angular/core').__processed_by_ivy_ngcc__).toBeUndefined();
       expect(loadPackage('local-package', _('/dist')).__processed_by_ivy_ngcc__).toBeUndefined();
+    });
+
+    it('should report an error, if one of the format-paths is missing or empty', () => {
+      loadTestFiles([
+        // A package with a format-path (main) that points to a missing file.
+        {
+          name: _(`/dist/pkg-with-missing-main/package.json`),
+          contents: `
+            {
+              "name": "pkg-with-missing-main",
+              "typings": "./index.d.ts",
+              "es2015": "./index-es2015.js",
+              "fesm5": "./index-es5.js",
+              "main": "./index-missing.js"
+            }
+          `,
+        },
+        {
+          name: _('/dist/pkg-with-missing-main/index.d.ts'),
+          contents: 'export type DummyData = boolean;'
+        },
+        {
+          name: _('/dist/pkg-with-missing-main/index-es2015.js'),
+          contents: 'var DUMMY_DATA = true;'
+        },
+        {name: _('/dist/pkg-with-missing-main/index-es5.js'), contents: 'var DUMMY_DATA = true;'},
+        {name: _('/dist/pkg-with-missing-main/index.metadata.json'), contents: 'DUMMY DATA'},
+
+        // A package with a format-path (main) that points to an empty file.
+        {
+          name: _(`/dist/pkg-with-empty-main/package.json`),
+          contents: `
+            {
+              "name": "pkg-with-empty-main",
+              "typings": "./index.d.ts",
+              "es2015": "./index-es2015.js",
+              "fesm5": "./index-es5.js",
+              "main": "./index-empty.js"
+            }
+          `,
+        },
+        {
+          name: _('/dist/pkg-with-empty-main/index.d.ts'),
+          contents: 'export type DummyData = boolean;'
+        },
+        {name: _('/dist/pkg-with-empty-main/index-empty.js'), contents: ''},
+        {name: _('/dist/pkg-with-empty-main/index-es2015.js'), contents: 'var DUMMY_DATA = true;'},
+        {name: _('/dist/pkg-with-empty-main/index-es5.js'), contents: 'var DUMMY_DATA = true;'},
+        {name: _('/dist/pkg-with-empty-main/index.metadata.json'), contents: 'DUMMY DATA'},
+      ]);
+
+      const logger = new MockLogger();
+      mainNgcc({
+        basePath: '/dist',
+        propertiesToConsider: ['es2015', 'main', 'fesm5'],
+        logger,
+      });
+
+      expect(loadPackage('pkg-with-missing-main', _('/dist')).__processed_by_ivy_ngcc__).toEqual({
+        es2015: jasmine.any(String),
+        fesm5: jasmine.any(String),
+        typings: jasmine.any(String),
+      });
+      expect(loadPackage('pkg-with-empty-main', _('/dist')).__processed_by_ivy_ngcc__).toEqual({
+        es2015: jasmine.any(String),
+        fesm5: jasmine.any(String),
+        typings: jasmine.any(String),
+      });
+
+      expect(logger.logs.error).toEqual([
+        [
+          'Failed to compile entry-point pkg-with-missing-main (`main` as unknown format) due to ' +
+              'property `main` pointing to a missing or empty file: ./index-missing.js',
+        ],
+        [
+          'Failed to compile entry-point pkg-with-empty-main (`main` as unknown format) due to ' +
+              'property `main` pointing to a missing or empty file: ./index-empty.js',
+        ],
+      ]);
     });
 
     it('should generate correct metadata for decorated getter/setter properties', () => {
@@ -572,7 +652,7 @@ runInEachFileSystem(() => {
            fail('should have thrown');
          } catch (e) {
            expect(e.message).toContain(
-               'Failed to compile entry-point test-package (esm2015 as esm2015) due to compilation errors:');
+               'Failed to compile entry-point test-package (`esm2015` as esm2015) due to compilation errors:');
            expect(e.message).toContain('NG1010');
            expect(e.message).toContain('selector must be a string');
          }
@@ -1240,9 +1320,94 @@ runInEachFileSystem(() => {
          });
     });
 
+    describe('with typingsOnly set to true', () => {
+      it('should only compile the typings', () => {
+        mainNgcc({
+          basePath: '/node_modules',
+          propertiesToConsider: ['module', 'fesm2015', 'main'],
+          typingsOnly: true,
+          compileAllFormats: true,
+          logger: new MockLogger(),
+        });
+        expect(loadPackage('@angular/core').__processed_by_ivy_ngcc__).toEqual({
+          typings: '0.0.0-PLACEHOLDER',
+        });
+        expect(loadPackage('@angular/common').__processed_by_ivy_ngcc__).toEqual({
+          typings: '0.0.0-PLACEHOLDER',
+        });
+        expect(loadPackage('@angular/common/testing').__processed_by_ivy_ngcc__).toEqual({
+          typings: '0.0.0-PLACEHOLDER',
+        });
+        expect(loadPackage('@angular/common/http').__processed_by_ivy_ngcc__).toEqual({
+          typings: '0.0.0-PLACEHOLDER',
+        });
+
+        // Doesn't touch original source files
+        expect(fs.readFile(_(`/node_modules/@angular/common/esm2015/src/common_module.js`)))
+            .not.toMatch(ANGULAR_CORE_IMPORT_REGEX);
+        // Or create a backup of the original
+        expect(fs.exists(
+                   _(`/node_modules/@angular/common/esm2015/src/common_module.js.__ivy_ngcc_bak`)))
+            .toBe(false);
+
+        // Overwrites .d.ts files
+        expect(fs.readFile(_(`/node_modules/@angular/common/common.d.ts`)))
+            .toMatch(ANGULAR_CORE_IMPORT_REGEX);
+        // And makes a backup
+        expect(fs.exists(_(`/node_modules/@angular/common/common.d.ts.__ivy_ngcc_bak`))).toBe(true);
+      });
+
+      it('should cope with compiling the same entry-point multiple times with different formats',
+         () => {
+           mainNgcc({
+             basePath: '/node_modules',
+             propertiesToConsider: ['main'],
+             typingsOnly: true,
+             logger: new MockLogger(),
+           });
+           expect(loadPackage('@angular/core').__processed_by_ivy_ngcc__).toEqual({
+             typings: '0.0.0-PLACEHOLDER',
+           });
+
+           // If ngcc tries to write out the typings files again, this will throw an exception.
+           mainNgcc({
+             basePath: '/node_modules',
+             propertiesToConsider: ['esm2015'],
+             typingsOnly: true,
+             logger: new MockLogger(),
+           });
+           expect(loadPackage('@angular/core').__processed_by_ivy_ngcc__).toEqual({
+             typings: '0.0.0-PLACEHOLDER',
+           });
+         });
+
+      it('should cope with compiling typings only followed by javascript formats', () => {
+        mainNgcc({
+          basePath: '/node_modules',
+          propertiesToConsider: ['esm2015', 'main'],
+          typingsOnly: true,
+          logger: new MockLogger(),
+        });
+        expect(loadPackage('@angular/core').__processed_by_ivy_ngcc__).toEqual({
+          typings: '0.0.0-PLACEHOLDER',
+        });
+
+        // If ngcc tries to write out the typings files again, this will throw an exception.
+        mainNgcc({
+          basePath: '/node_modules',
+          propertiesToConsider: ['esm2015', 'main'],
+          logger: new MockLogger(),
+        });
+        expect(loadPackage('@angular/core').__processed_by_ivy_ngcc__).toEqual({
+          main: '0.0.0-PLACEHOLDER',
+          esm2015: '0.0.0-PLACEHOLDER',
+          typings: '0.0.0-PLACEHOLDER',
+        });
+      });
+    });
+
     describe('with createNewEntryPointFormats', () => {
       it('should create new files rather than overwriting the originals', () => {
-        const ANGULAR_CORE_IMPORT_REGEX = /import \* as ɵngcc\d+ from '@angular\/core';/;
         mainNgcc({
           basePath: '/node_modules',
           createNewEntryPointFormats: true,
@@ -1390,12 +1555,13 @@ runInEachFileSystem(() => {
             {basePath: '/node_modules', propertiesToConsider: ['main'], logger: new MockLogger()});
         // Check that common/testing ES5 was processed
         let commonTesting =
-            JSON.parse(fs.readFile(_('/node_modules/@angular/common/testing/package.json')));
+            JSON.parse(fs.readFile(_('/node_modules/@angular/common/testing/package.json'))) as
+            EntryPointPackageJson;
         expect(hasBeenProcessed(commonTesting, 'main')).toBe(true);
         expect(hasBeenProcessed(commonTesting, 'esm2015')).toBe(false);
         // Modify the manifest to test that is has no effect
-        let manifest: EntryPointManifestFile =
-            JSON.parse(fs.readFile(_('/node_modules/__ngcc_entry_points__.json')));
+        let manifest = JSON.parse(fs.readFile(_('/node_modules/__ngcc_entry_points__.json'))) as
+            EntryPointManifestFile;
         manifest.entryPointPaths =
             manifest.entryPointPaths.filter(paths => paths[1] !== '@angular/common/testing');
         fs.writeFile(_('/node_modules/__ngcc_entry_points__.json'), JSON.stringify(manifest));
@@ -1409,12 +1575,14 @@ runInEachFileSystem(() => {
         });
         // Check that common/testing ES2015 is now processed, despite the manifest not listing it
         commonTesting =
-            JSON.parse(fs.readFile(_('/node_modules/@angular/common/testing/package.json')));
+            JSON.parse(fs.readFile(_('/node_modules/@angular/common/testing/package.json'))) as
+            EntryPointPackageJson;
         expect(hasBeenProcessed(commonTesting, 'main')).toBe(true);
         expect(hasBeenProcessed(commonTesting, 'esm2015')).toBe(true);
         // Check that the newly computed manifest has written to disk, containing the path that we
         // had removed earlier.
-        manifest = JSON.parse(fs.readFile(_('/node_modules/__ngcc_entry_points__.json')));
+        manifest = JSON.parse(fs.readFile(_('/node_modules/__ngcc_entry_points__.json'))) as
+            EntryPointManifestFile;
         expect(manifest.entryPointPaths).toContain([
           '@angular/common',
           '@angular/common/testing',
@@ -1463,7 +1631,7 @@ runInEachFileSystem(() => {
              fail('should have thrown');
            } catch (e) {
              expect(e.message).toContain(
-                 'Failed to compile entry-point fatal-error (es2015 as esm2015) due to compilation errors:');
+                 'Failed to compile entry-point fatal-error (`es2015` as esm2015) due to compilation errors:');
              expect(e.message).toContain('NG2001');
              expect(e.message).toContain('component is missing a template');
            }
@@ -1541,7 +1709,7 @@ runInEachFileSystem(() => {
            expect(logger.logs.error.length).toEqual(1);
            const message = logger.logs.error[0][0];
            expect(message).toContain(
-               'Failed to compile entry-point fatal-error (es2015 as esm2015) due to compilation errors:');
+               'Failed to compile entry-point fatal-error (`es2015` as esm2015) due to compilation errors:');
            expect(message).toContain('NG2001');
            expect(message).toContain('component is missing a template');
 
@@ -2248,7 +2416,8 @@ runInEachFileSystem(() => {
 
     function loadPackage(
         packageName: string, basePath: AbsoluteFsPath = _('/node_modules')): EntryPointPackageJson {
-      return JSON.parse(fs.readFile(fs.resolve(basePath, packageName, 'package.json')));
+      return JSON.parse(fs.readFile(fs.resolve(basePath, packageName, 'package.json'))) as
+          EntryPointPackageJson;
     }
 
     function initMockFileSystem(fs: FileSystem, testFiles: Folder) {

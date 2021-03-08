@@ -8,10 +8,13 @@
 import {absoluteFrom, FileSystem, getFileSystem} from '../../../src/ngtsc/file_system';
 import {runInEachFileSystem} from '../../../src/ngtsc/file_system/testing';
 import {MockLogger} from '../../../src/ngtsc/logging/testing';
+import {RawSourceMap} from '../../../src/ngtsc/sourcemaps';
 import {loadTestFiles} from '../../../src/ngtsc/testing';
+import {DtsProcessing} from '../../src/execution/tasks/api';
 import {NgccConfiguration} from '../../src/packages/configuration';
 import {EntryPoint, EntryPointFormat, EntryPointJsonProperty, getEntryPointInfo, isEntryPoint} from '../../src/packages/entry_point';
 import {EntryPointBundle, makeEntryPointBundle} from '../../src/packages/entry_point_bundle';
+import {NewEntryPointPropertiesMap} from '../../src/packages/entry_point_manifest';
 import {createModuleResolutionCache, SharedFileCache} from '../../src/packages/source_file_cache';
 import {FileWriter} from '../../src/writing/file_writer';
 import {NewEntryPointFileWriter} from '../../src/writing/new_entry_point_file_writer';
@@ -184,7 +187,9 @@ runInEachFileSystem(() => {
            }];
            fileWriter.writeBundle(esm2015bundle, modifiedFiles, ['es2015']);
 
-           expect(JSON.parse(fs.readFile(_('/node_modules/test/__ivy_ngcc__/es2015/index.js.map'))))
+           expect(
+               JSON.parse(fs.readFile(_('/node_modules/test/__ivy_ngcc__/es2015/index.js.map'))) as
+               Partial<RawSourceMap>)
                .toEqual({...sourceMap, sourceRoot: '../../es2015'});
          });
 
@@ -213,7 +218,9 @@ runInEachFileSystem(() => {
            }];
            fileWriter.writeBundle(esm2015bundle, modifiedFiles, ['es2015']);
 
-           expect(JSON.parse(fs.readFile(_('/node_modules/test/__ivy_ngcc__/es2015/index.js.map'))))
+           expect(
+               JSON.parse(fs.readFile(_('/node_modules/test/__ivy_ngcc__/es2015/index.js.map'))) as
+               Partial<RawSourceMap>)
                .toEqual({...sourceMap, sourceRoot: '../../src'});
          });
 
@@ -678,7 +685,8 @@ runInEachFileSystem(() => {
               },
             ],
             ['fesm5', 'module']);
-        const packageJsonFromFile1 = JSON.parse(fs.readFile(packageJsonPath));
+        const packageJsonFromFile1 =
+            JSON.parse(fs.readFile(packageJsonPath)) as NewEntryPointPropertiesMap;
 
         expect(entryPoint.packageJson).toEqual(jasmine.objectContaining({
           fesm5_ivy_ngcc: '__ivy_ngcc__/esm5.js',
@@ -698,7 +706,8 @@ runInEachFileSystem(() => {
             esm5bundle.entryPoint,
             [_('/node_modules/test/index.d.ts'), _('/node_modules/test/index.d.ts.map')],
             ['fesm5', 'module']);
-        const packageJsonFromFile2 = JSON.parse(fs.readFile(packageJsonPath));
+        const packageJsonFromFile2 =
+            JSON.parse(fs.readFile(packageJsonPath)) as NewEntryPointPropertiesMap;
 
         expect(entryPoint.packageJson).toEqual(jasmine.objectContaining({
           fesm5: './esm5.js',
@@ -723,6 +732,6 @@ runInEachFileSystem(() => {
     const moduleResolutionCache = createModuleResolutionCache(fs);
     return makeEntryPointBundle(
         fs, entryPoint, new SharedFileCache(fs), moduleResolutionCache,
-        entryPoint.packageJson[formatProperty]!, false, format, true);
+        entryPoint.packageJson[formatProperty]!, false, format, DtsProcessing.Yes);
   }
 });

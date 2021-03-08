@@ -2740,7 +2740,7 @@ describe('Integration', () => {
            })));
       });
 
-      describe('should reset the location when cancleling a navigation', () => {
+      describe('should reset the location when cancelling a navigation', () => {
         beforeEach(() => {
           TestBed.configureTestingModule({
             providers: [{
@@ -3320,7 +3320,7 @@ describe('Integration', () => {
 
              const cmp: RouteCmp = fixture.debugElement.children[1].componentInstance;
 
-             // Land on an inital page
+             // Land on an initial page
              router.navigateByUrl('/d/1;dd=11/e/2;dd=22');
              advance(fixture);
 
@@ -4503,6 +4503,52 @@ describe('Integration', () => {
          advance(fixture);
 
          expect(navigateSpy.calls.mostRecent().args[1]!.queryParams);
+       })));
+
+
+    it('should stop emitting events after the router is destroyed',
+       fakeAsync(inject([Router], (router: Router) => {
+         const fixture = createRoot(router, RootCmp);
+         router.resetConfig([{path: 'user/:name', component: UserCmp}]);
+
+         let events = 0;
+         const subscription = router.events.subscribe(() => events++);
+
+         router.navigateByUrl('/user/frodo');
+         advance(fixture);
+         expect(events).toBeGreaterThan(0);
+
+         const previousCount = events;
+         router.dispose();
+         router.navigateByUrl('/user/bilbo');
+         advance(fixture);
+
+         expect(events).toBe(previousCount);
+         subscription.unsubscribe();
+       })));
+
+    it('should resolve navigation promise with false after the router is destroyed',
+       fakeAsync(inject([Router], (router: Router) => {
+         const fixture = createRoot(router, RootCmp);
+         let result = null as boolean | null;
+         const callback = (r: boolean) => result = r;
+         router.resetConfig([{path: 'user/:name', component: UserCmp}]);
+
+         router.navigateByUrl('/user/frodo').then(callback);
+         advance(fixture);
+         expect(result).toBe(true);
+         result = null as boolean | null;
+
+         router.dispose();
+
+         router.navigateByUrl('/user/bilbo').then(callback);
+         advance(fixture);
+         expect(result).toBe(false);
+         result = null as boolean | null;
+
+         router.navigate(['/user/bilbo']).then(callback);
+         advance(fixture);
+         expect(result).toBe(false);
        })));
   });
 

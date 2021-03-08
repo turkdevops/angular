@@ -294,6 +294,7 @@ export class Identifiers {
   static PipeDefWithMeta: o.ExternalReference = {name: 'ɵɵPipeDefWithMeta', moduleName: CORE};
 
   static definePipe: o.ExternalReference = {name: 'ɵɵdefinePipe', moduleName: CORE};
+  static declarePipe: o.ExternalReference = {name: 'ɵɵngDeclarePipe', moduleName: CORE};
 
   static queryRefresh: o.ExternalReference = {name: 'ɵɵqueryRefresh', moduleName: CORE};
   static viewQuery: o.ExternalReference = {name: 'ɵɵviewQuery', moduleName: CORE};
@@ -311,11 +312,6 @@ export class Identifiers {
   static ProvidersFeature: o.ExternalReference = {name: 'ɵɵProvidersFeature', moduleName: CORE};
 
   static listener: o.ExternalReference = {name: 'ɵɵlistener', moduleName: CORE};
-
-  static getFactoryOf: o.ExternalReference = {
-    name: 'ɵɵgetFactoryOf',
-    moduleName: CORE,
-  };
 
   static getInheritedFactory: o.ExternalReference = {
     name: 'ɵɵgetInheritedFactory',

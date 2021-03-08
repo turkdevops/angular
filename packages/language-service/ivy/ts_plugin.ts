@@ -7,17 +7,16 @@
  */
 
 import * as ts from 'typescript/lib/tsserverlibrary';
-import {GetTcbResponse, LanguageService} from './language_service';
 
-export interface NgLanguageService extends ts.LanguageService {
-  getTcb(fileName: string, position: number): GetTcbResponse;
-}
+import {GetComponentLocationsForTemplateResponse, GetTcbResponse, NgLanguageService} from '../api';
+
+import {LanguageService} from './language_service';
 
 export function create(info: ts.server.PluginCreateInfo): NgLanguageService {
   const {project, languageService: tsLS, config} = info;
   const angularOnly = config?.angularOnly === true;
 
-  const ngLS = new LanguageService(project, tsLS);
+  const ngLS = new LanguageService(project, tsLS, config);
 
   function getSemanticDiagnostics(fileName: string): ts.Diagnostic[] {
     const diagnostics: ts.Diagnostic[] = [];
@@ -131,8 +130,16 @@ export function create(info: ts.server.PluginCreateInfo): NgLanguageService {
     return diagnostics;
   }
 
-  function getTcb(fileName: string, position: number): GetTcbResponse {
+  function getTcb(fileName: string, position: number): GetTcbResponse|undefined {
     return ngLS.getTcb(fileName, position);
+  }
+
+  /**
+   * Given an external template, finds the associated components that use it as a `templateUrl`.
+   */
+  function getComponentLocationsForTemplate(fileName: string):
+      GetComponentLocationsForTemplateResponse {
+    return ngLS.getComponentLocationsForTemplate(fileName);
   }
 
   return {
@@ -149,6 +156,7 @@ export function create(info: ts.server.PluginCreateInfo): NgLanguageService {
     getCompletionEntrySymbol,
     getTcb,
     getCompilerOptionsDiagnostics,
+    getComponentLocationsForTemplate,
   };
 }
 

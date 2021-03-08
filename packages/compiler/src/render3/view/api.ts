@@ -277,6 +277,11 @@ export interface R3UsedDirectiveMetadata {
    * Name under which the directive is exported, if any (exportAs in Angular). Null otherwise.
    */
   exportAs: string[]|null;
+
+  /**
+   * If true then this directive is actually a component; otherwise it is not.
+   */
+  isComponent?: boolean;
 }
 
 /**
@@ -345,6 +350,14 @@ export interface R3DirectiveDef {
  * Output of render3 component compilation.
  */
 export interface R3ComponentDef {
+  expression: o.Expression;
+  type: o.Type;
+}
+
+/**
+ * Output of render3 pipe compilation.
+ */
+export interface R3PipeDef {
   expression: o.Expression;
   type: o.Type;
 }

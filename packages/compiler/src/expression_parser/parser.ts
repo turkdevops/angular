@@ -243,14 +243,12 @@ export class Parser {
         const fullEnd = exprEnd + interpEnd.length;
 
         const text = input.substring(exprStart, exprEnd);
-        if (text.trim().length > 0) {
-          expressions.push({text, start: fullStart, end: fullEnd});
-        } else {
+        if (text.trim().length === 0) {
           this._reportError(
               'Blank expressions are not allowed in interpolated strings', input,
               `at column ${i} in`, location);
-          expressions.push({text: '$implicit', start: fullStart, end: fullEnd});
         }
+        expressions.push({text, start: fullStart, end: fullEnd});
         offsets.push(exprStart);
 
         i = fullEnd;
@@ -450,14 +448,27 @@ export class _ParseAST {
     return this.absoluteOffset + this.inputIndex;
   }
 
-  span(start: number) {
-    return new ParseSpan(start, this.currentEndIndex);
+  /**
+   * Retrieve a `ParseSpan` from `start` to the current position (or to `artificialEndIndex` if
+   * provided).
+   *
+   * @param start Position from which the `ParseSpan` will start.
+   * @param artificialEndIndex Optional ending index to be used if provided (and if greater than the
+   *     natural ending index)
+   */
+  span(start: number, artificialEndIndex?: number): ParseSpan {
+    let endIndex = this.currentEndIndex;
+    if (artificialEndIndex !== undefined && artificialEndIndex > this.currentEndIndex) {
+      endIndex = artificialEndIndex;
+    }
+    return new ParseSpan(start, endIndex);
   }
 
-  sourceSpan(start: number): AbsoluteSourceSpan {
-    const serial = `${start}@${this.inputIndex}`;
+  sourceSpan(start: number, artificialEndIndex?: number): AbsoluteSourceSpan {
+    const serial = `${start}@${this.inputIndex}:${artificialEndIndex}`;
     if (!this.sourceSpanCache.has(serial)) {
-      this.sourceSpanCache.set(serial, this.span(start).toAbsolute(this.absoluteOffset));
+      this.sourceSpanCache.set(
+          serial, this.span(start, artificialEndIndex).toAbsolute(this.absoluteOffset));
     }
     return this.sourceSpanCache.get(serial)!;
   }
@@ -521,11 +532,11 @@ export class _ParseAST {
     return tok === EOF ? 'end of input' : `token ${tok}`;
   }
 
-  expectIdentifierOrKeyword(): string {
+  expectIdentifierOrKeyword(): string|null {
     const n = this.next;
     if (!n.isIdentifier() && !n.isKeyword()) {
       this.error(`Unexpected ${this.prettyPrintToken(n)}, expected identifier or keyword`);
-      return '';
+      return null;
     }
     this.advance();
     return n.toString() as string;
@@ -558,12 +569,20 @@ export class _ParseAST {
         this.error(`Unexpected token '${this.next}'`);
       }
     }
-    if (exprs.length == 0) return new EmptyExpr(this.span(start), this.sourceSpan(start));
+    if (exprs.length == 0) {
+      // We have no expressions so create an empty expression that spans the entire input length
+      const artificialStart = this.offset;
+      const artificialEnd = this.offset + this.inputLength;
+      return new EmptyExpr(
+          this.span(artificialStart, artificialEnd),
+          this.sourceSpan(artificialStart, artificialEnd));
+    }
     if (exprs.length == 1) return exprs[0];
     return new Chain(this.span(start), this.sourceSpan(start), exprs);
   }
 
   parsePipe(): AST {
+    const start = this.inputIndex;
     let result = this.parseExpression();
     if (this.consumeOptionalOperator('|')) {
       if (this.parseAction) {
@@ -572,15 +591,39 @@ export class _ParseAST {
 
       do {
         const nameStart = this.inputIndex;
-        const name = this.expectIdentifierOrKeyword();
-        const nameSpan = this.sourceSpan(nameStart);
+        let nameId = this.expectIdentifierOrKeyword();
+        let nameSpan: AbsoluteSourceSpan;
+        let fullSpanEnd: number|undefined = undefined;
+        if (nameId !== null) {
+          nameSpan = this.sourceSpan(nameStart);
+        } else {
+          // No valid identifier was found, so we'll assume an empty pipe name ('').
+          nameId = '';
+
+          // However, there may have been whitespace present between the pipe character and the next
+          // token in the sequence (or the end of input). We want to track this whitespace so that
+          // the `BindingPipe` we produce covers not just the pipe character, but any trailing
+          // whitespace beyond it. Another way of thinking about this is that the zero-length name
+          // is assumed to be at the end of any whitespace beyond the pipe character.
+          //
+          // Therefore, we push the end of the `ParseSpan` for this pipe all the way up to the
+          // beginning of the next token, or until the end of input if the next token is EOF.
+          fullSpanEnd = this.next.index !== -1 ? this.next.index : this.inputLength + this.offset;
+
+          // The `nameSpan` for an empty pipe name is zero-length at the end of any whitespace
+          // beyond the pipe character.
+          nameSpan = new ParseSpan(fullSpanEnd, fullSpanEnd).toAbsolute(this.absoluteOffset);
+        }
+
         const args: AST[] = [];
         while (this.consumeOptionalCharacter(chars.$COLON)) {
           args.push(this.parseExpression());
+
+          // If there are additional expressions beyond the name, then the artificial end for the
+          // name is no longer relevant.
         }
-        const {start} = result.span;
-        result =
-            new BindingPipe(this.span(start), this.sourceSpan(start), result, name, args, nameSpan);
+        result = new BindingPipe(
+            this.span(start), this.sourceSpan(start, fullSpanEnd), result, nameId, args, nameSpan);
       } while (this.consumeOptionalOperator('|'));
     }
 
@@ -614,10 +657,10 @@ export class _ParseAST {
 
   parseLogicalOr(): AST {
     // '||'
+    const start = this.inputIndex;
     let result = this.parseLogicalAnd();
     while (this.consumeOptionalOperator('||')) {
       const right = this.parseLogicalAnd();
-      const {start} = result.span;
       result = new Binary(this.span(start), this.sourceSpan(start), '||', result, right);
     }
     return result;
@@ -625,10 +668,10 @@ export class _ParseAST {
 
   parseLogicalAnd(): AST {
     // '&&'
+    const start = this.inputIndex;
     let result = this.parseEquality();
     while (this.consumeOptionalOperator('&&')) {
       const right = this.parseEquality();
-      const {start} = result.span;
       result = new Binary(this.span(start), this.sourceSpan(start), '&&', result, right);
     }
     return result;
@@ -636,6 +679,7 @@ export class _ParseAST {
 
   parseEquality(): AST {
     // '==','!=','===','!=='
+    const start = this.inputIndex;
     let result = this.parseRelational();
     while (this.next.type == TokenType.Operator) {
       const operator = this.next.strValue;
@@ -646,7 +690,6 @@ export class _ParseAST {
         case '!==':
           this.advance();
           const right = this.parseRelational();
-          const {start} = result.span;
           result = new Binary(this.span(start), this.sourceSpan(start), operator, result, right);
           continue;
       }
@@ -657,6 +700,7 @@ export class _ParseAST {
 
   parseRelational(): AST {
     // '<', '>', '<=', '>='
+    const start = this.inputIndex;
     let result = this.parseAdditive();
     while (this.next.type == TokenType.Operator) {
       const operator = this.next.strValue;
@@ -667,7 +711,6 @@ export class _ParseAST {
         case '>=':
           this.advance();
           const right = this.parseAdditive();
-          const {start} = result.span;
           result = new Binary(this.span(start), this.sourceSpan(start), operator, result, right);
           continue;
       }
@@ -678,6 +721,7 @@ export class _ParseAST {
 
   parseAdditive(): AST {
     // '+', '-'
+    const start = this.inputIndex;
     let result = this.parseMultiplicative();
     while (this.next.type == TokenType.Operator) {
       const operator = this.next.strValue;
@@ -686,7 +730,6 @@ export class _ParseAST {
         case '-':
           this.advance();
           let right = this.parseMultiplicative();
-          const {start} = result.span;
           result = new Binary(this.span(start), this.sourceSpan(start), operator, result, right);
           continue;
       }
@@ -697,6 +740,7 @@ export class _ParseAST {
 
   parseMultiplicative(): AST {
     // '*', '%', '/'
+    const start = this.inputIndex;
     let result = this.parsePrefix();
     while (this.next.type == TokenType.Operator) {
       const operator = this.next.strValue;
@@ -706,7 +750,6 @@ export class _ParseAST {
         case '/':
           this.advance();
           let right = this.parsePrefix();
-          const {start} = result.span;
           result = new Binary(this.span(start), this.sourceSpan(start), operator, result, right);
           continue;
       }
@@ -739,14 +782,14 @@ export class _ParseAST {
   }
 
   parseCallChain(): AST {
+    const start = this.inputIndex;
     let result = this.parsePrimary();
-    const resultStart = result.span.start;
     while (true) {
       if (this.consumeOptionalCharacter(chars.$PERIOD)) {
-        result = this.parseAccessMemberOrMethodCall(result, false);
+        result = this.parseAccessMemberOrMethodCall(result, start, false);
 
       } else if (this.consumeOptionalOperator('?.')) {
-        result = this.parseAccessMemberOrMethodCall(result, true);
+        result = this.parseAccessMemberOrMethodCall(result, start, true);
 
       } else if (this.consumeOptionalCharacter(chars.$LBRACKET)) {
         this.withContext(ParseContextFlags.Writable, () => {
@@ -759,11 +802,9 @@ export class _ParseAST {
           this.expectCharacter(chars.$RBRACKET);
           if (this.consumeOptionalOperator('=')) {
             const value = this.parseConditional();
-            result = new KeyedWrite(
-                this.span(resultStart), this.sourceSpan(resultStart), result, key, value);
+            result = new KeyedWrite(this.span(start), this.sourceSpan(start), result, key, value);
           } else {
-            result =
-                new KeyedRead(this.span(resultStart), this.sourceSpan(resultStart), result, key);
+            result = new KeyedRead(this.span(start), this.sourceSpan(start), result, key);
           }
         });
       } else if (this.consumeOptionalCharacter(chars.$LPAREN)) {
@@ -771,11 +812,10 @@ export class _ParseAST {
         const args = this.parseCallArguments();
         this.rparensExpected--;
         this.expectCharacter(chars.$RPAREN);
-        result =
-            new FunctionCall(this.span(resultStart), this.sourceSpan(resultStart), result, args);
+        result = new FunctionCall(this.span(start), this.sourceSpan(start), result, args);
 
       } else if (this.consumeOptionalOperator('!')) {
-        result = new NonNullAssert(this.span(resultStart), this.sourceSpan(resultStart), result);
+        result = new NonNullAssert(this.span(start), this.sourceSpan(start), result);
 
       } else {
         return result;
@@ -823,7 +863,7 @@ export class _ParseAST {
 
     } else if (this.next.isIdentifier()) {
       return this.parseAccessMemberOrMethodCall(
-          new ImplicitReceiver(this.span(start), this.sourceSpan(start)), false);
+          new ImplicitReceiver(this.span(start), this.sourceSpan(start)), start, false);
 
     } else if (this.next.isNumber()) {
       const value = this.next.toNumber();
@@ -877,11 +917,10 @@ export class _ParseAST {
     return new LiteralMap(this.span(start), this.sourceSpan(start), keys, values);
   }
 
-  parseAccessMemberOrMethodCall(receiver: AST, isSafe: boolean = false): AST {
-    const start = receiver.span.start;
+  parseAccessMemberOrMethodCall(receiver: AST, start: number, isSafe: boolean = false): AST {
     const nameStart = this.inputIndex;
     const id = this.withContext(ParseContextFlags.Writable, () => {
-      const id = this.expectIdentifierOrKeyword();
+      const id = this.expectIdentifierOrKeyword() ?? '';
       if (id.length === 0) {
         this.error(`Expected identifier for property access`, receiver.span.end);
       }

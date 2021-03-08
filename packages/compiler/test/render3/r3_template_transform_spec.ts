@@ -116,6 +116,19 @@ describe('R3 template transform', () => {
   });
 
   describe('Nodes without binding', () => {
+    it('should parse incomplete tags terminated by EOF', () => {
+      expectFromHtml('<a', true /* ignoreError */).toEqual([
+        ['Element', 'a'],
+      ]);
+    });
+
+    it('should parse incomplete tags terminated by another tag', () => {
+      expectFromHtml('<a <span></span>', true /* ignoreError */).toEqual([
+        ['Element', 'a'],
+        ['Element', 'span'],
+      ]);
+    });
+
     it('should parse text nodes', () => {
       expectFromHtml('a').toEqual([
         ['Text', 'a'],
@@ -271,6 +284,11 @@ describe('R3 template transform', () => {
         ['Template'],
         ['Reference', 'a', ''],
       ]);
+    });
+
+    it('should report an error if a reference is used multiple times on the same template', () => {
+      expect(() => parse('<ng-template #a #a></ng-template>'))
+          .toThrowError(/Reference "#a" is defined more than once/);
     });
 
     it('should parse variables via let-...', () => {
@@ -462,6 +480,11 @@ describe('R3 template transform', () => {
 
     it('should report missing reference names', () => {
       expect(() => parse('<div #></div>')).toThrowError(/Reference does not have a name/);
+    });
+
+    it('should report an error if a reference is used multiple times on the same element', () => {
+      expect(() => parse('<div #a #a></div>'))
+          .toThrowError(/Reference "#a" is defined more than once/);
     });
   });
 

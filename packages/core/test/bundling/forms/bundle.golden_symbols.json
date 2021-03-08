@@ -174,12 +174,6 @@
     "name": "EMPTY_ARRAY"
   },
   {
-    "name": "EMPTY_ARRAY"
-  },
-  {
-    "name": "EMPTY_ARRAY"
-  },
-  {
     "name": "EMPTY_OBJ"
   },
   {
@@ -1011,6 +1005,9 @@
     "name": "getFactoryDef"
   },
   {
+    "name": "getFactoryOf"
+  },
+  {
     "name": "getFirstLContainer"
   },
   {
@@ -1087,6 +1084,9 @@
   },
   {
     "name": "getPreviousIndex"
+  },
+  {
+    "name": "getProjectionNodes"
   },
   {
     "name": "getPromiseCtor"
@@ -1249,6 +1249,9 @@
   },
   {
     "name": "isObject"
+  },
+  {
+    "name": "isObservable"
   },
   {
     "name": "isOptionsObj"
@@ -1717,9 +1720,6 @@
   },
   {
     "name": "ɵɵelementStart"
-  },
-  {
-    "name": "ɵɵgetFactoryOf"
   },
   {
     "name": "ɵɵgetInheritedFactory"

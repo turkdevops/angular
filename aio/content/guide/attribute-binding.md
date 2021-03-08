@@ -34,7 +34,7 @@ Then, you set the attribute value with an expression that resolves to a string.
 
 <div class="alert is-helpful">
 
-When the expression resolves to `null`, Angular removes the attribute altogether.
+When the expression resolves to `null` or `undefined`, Angular removes the attribute altogether.
 
 </div>
 
@@ -74,10 +74,8 @@ For more information on how to bind to the `colSpan` property, see the [`colspan
 
 </div>
 
-<hr/>
 
 {@a class-binding}
-
 ## Binding to the `class` attribute
 
 You can use class binding to add and remove CSS class names from an element's `class` attribute.
@@ -159,10 +157,8 @@ The following table summarizes class binding syntax.
   </tr>
 </table>
 
-<hr/>
 
 {@a style-binding}
-
 ## Binding to the style attribute
 
 You can use style binding to set styles dynamically.
@@ -178,6 +174,12 @@ Optionally, you can add a unit extension like `em` or `%`, which requires a numb
 You can write a style property name in either [dash-case](guide/glossary#dash-case), or
 [camelCase](guide/glossary#camelcase).
 
+<code-example language="html">
+  &lt;nav [style.background-color]="expression"&gt;&lt;/nav&gt;
+
+  &lt;nav [style.backgroundColor]="expression"&gt;&lt;/nav&gt;
+</code-example>
+
 </div>
 
 ### Binding to multiple styles
@@ -185,8 +187,8 @@ You can write a style property name in either [dash-case](guide/glossary#dash-ca
 To toggle multiple styles, bind to the `[style]` attribute&mdash;for example, `[style]="styleExpression"`.
 The `styleExpression` can be one of:
 
-* A string list of styles such as `"width: 100px; height: 100px;"`.
-* An object with style names as the keys and style values as the values, such as `{width: '100px', height: '100px'}`.
+* A string list of styles such as `"width: 100px; height: 100px; background-color: cornflowerblue;"`.
+* An object with style names as the keys and style values as the values, such as `{width: '100px', height: '100px', backgroundColor: 'cornflowerblue'}`.
 
 Note that binding an array to `[style]` is not supported.
 
@@ -196,6 +198,11 @@ When binding `[style]` to an object expression, the identity of the object must 
 Updating the property without changing object identity has no effect.
 
 </div>
+
+#### Single and multiple-style binding example
+
+<code-example path="attribute-binding/src/app/single-and-multiple-style-binding.component.ts" header="nav-bar.component.ts">
+</code-example>
 
 If there are multiple bindings to the same style attribute, Angular uses [styling precedence](guide/style-precedence) to determine which binding to use.
 
@@ -260,10 +267,7 @@ However, using the above style binding syntax without `NgStyle` is preferred bec
 
 </div>
 
-<hr/>
-
 {@a styling-precedence}
-
 ## Styling Precedence
 
 A single HTML element can have its CSS class list and style values bound to multiple sources (for example, host bindings from multiple directives).
@@ -325,8 +329,6 @@ Imagine that the `dirWithHostBinding` directive and the `comp-with-host-binding`
 In that case, if `dirWithHostBinding` sets its binding to `undefined`, the `width` property will fall back to the value of the `comp-with-host-binding` host binding.
 However, if `dirWithHostBinding` sets its binding to `null`, the `width` property will be removed entirely.
 
-
-<hr/>
 
 ## Injecting attribute values
 

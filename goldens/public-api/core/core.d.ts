@@ -25,12 +25,12 @@ export declare const APP_BOOTSTRAP_LISTENER: InjectionToken<((compRef: Component
 
 export declare const APP_ID: InjectionToken<string>;
 
-export declare const APP_INITIALIZER: InjectionToken<(() => void)[]>;
+export declare const APP_INITIALIZER: InjectionToken<readonly (() => Observable<unknown> | Promise<unknown> | void)[]>;
 
 export declare class ApplicationInitStatus {
     readonly done = false;
     readonly donePromise: Promise<any>;
-    constructor(appInits: (() => any)[]);
+    constructor(appInits: ReadonlyArray<() => Observable<unknown> | Promise<unknown> | void>);
 }
 
 export declare class ApplicationModule {
@@ -301,7 +301,7 @@ export declare class ElementRef<T = any> {
 }
 
 export declare abstract class EmbeddedViewRef<C> extends ViewRef {
-    abstract get context(): C;
+    abstract context: C;
     abstract get rootNodes(): any[];
 }
 
@@ -314,7 +314,8 @@ export declare class ErrorHandler {
 export declare interface EventEmitter<T> extends Subject<T> {
     new (isAsync?: boolean): EventEmitter<T>;
     emit(value?: T): void;
-    subscribe(generatorOrNext?: any, error?: any, complete?: any): Subscription;
+    subscribe(next?: (value: T) => void, error?: (error: any) => void, complete?: () => void): Subscription;
+    subscribe(observerOrNext?: any, error?: any, complete?: any): Subscription;
 }
 
 export declare const EventEmitter: {
@@ -420,7 +421,7 @@ export declare interface InjectableDecorator {
 export declare type InjectableProvider = ValueSansProvider | ExistingSansProvider | StaticClassSansProvider | ConstructorSansProvider | FactorySansProvider | ClassSansProvider;
 
 export declare interface InjectableType<T> extends Type<T> {
-    ɵprov: never;
+    ɵprov: unknown;
 }
 
 export declare interface InjectDecorator {
@@ -438,7 +439,7 @@ export declare enum InjectFlags {
 
 export declare class InjectionToken<T> {
     protected _desc: string;
-    readonly ɵprov: never | undefined;
+    readonly ɵprov: unknown;
     constructor(_desc: string, options?: {
         providedIn?: Type<any> | 'root' | 'platform' | 'any' | null;
         factory: () => T;
@@ -451,7 +452,7 @@ export declare abstract class Injector {
     /** @deprecated */ abstract get(token: any, notFoundValue?: any): any;
     static NULL: Injector;
     static THROW_IF_NOT_FOUND: {};
-    static ɵprov: never;
+    static ɵprov: unknown;
     /** @deprecated */ static create(providers: StaticProvider[], parent?: Injector): Injector;
     static create(options: {
         providers: StaticProvider[];
@@ -463,7 +464,7 @@ export declare abstract class Injector {
 export declare const INJECTOR: InjectionToken<Injector>;
 
 export declare interface InjectorType<T> extends Type<T> {
-    ɵinj: never;
+    ɵinj: unknown;
 }
 
 export declare interface Input {
@@ -509,7 +510,7 @@ export declare class IterableDiffers {
     /** @deprecated */ factories: IterableDifferFactory[];
     constructor(factories: IterableDifferFactory[]);
     find(iterable: any): IterableDifferFactory;
-    static ɵprov: never;
+    static ɵprov: unknown;
     static create(factories: IterableDifferFactory[], parent?: IterableDiffers): IterableDiffers;
     static extend(factories: IterableDifferFactory[]): StaticProvider;
 }
@@ -544,7 +545,7 @@ export declare class KeyValueDiffers {
     /** @deprecated */ factories: KeyValueDifferFactory[];
     constructor(factories: KeyValueDifferFactory[]);
     find(kv: any): KeyValueDifferFactory;
-    static ɵprov: never;
+    static ɵprov: unknown;
     static create<S>(factories: KeyValueDifferFactory[], parent?: KeyValueDiffers): KeyValueDiffers;
     static extend<S>(factories: KeyValueDifferFactory[]): StaticProvider;
 }
@@ -675,7 +676,7 @@ export declare function ɵɵdefineInjectable<T>(opts: {
     token: unknown;
     providedIn?: Type<any> | 'root' | 'platform' | 'any' | null;
     factory: () => T;
-}): never;
+}): unknown;
 
 /** @codeGenApi */
 export declare function ɵɵinject<T>(token: Type<T> | AbstractType<T> | InjectionToken<T>): T;
@@ -858,7 +859,7 @@ export declare function resolveForwardRef<T>(type: T): T;
 
 export declare abstract class Sanitizer {
     abstract sanitize(context: SecurityContext, value: {} | string | null): string | null;
-    static ɵprov: never;
+    static ɵprov: unknown;
 }
 
 export declare interface SchemaMetadata {

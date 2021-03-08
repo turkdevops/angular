@@ -10,12 +10,13 @@ import {Type} from '@angular/compiler';
 import * as ts from 'typescript';
 
 import {ComponentDecoratorHandler, DirectiveDecoratorHandler, InjectableDecoratorHandler, NgModuleDecoratorHandler, NoopReferencesRegistry, PipeDecoratorHandler, ReferencesRegistry} from '../../annotations';
-import {CycleAnalyzer, ImportGraph} from '../../cycles';
+import {CycleAnalyzer, CycleHandlingStrategy, ImportGraph} from '../../cycles';
 import {COMPILER_ERRORS_WITH_GUIDES, ERROR_DETAILS_PAGE_BASE_URL, ErrorCode, ngErrorCode} from '../../diagnostics';
 import {checkForPrivateExports, ReferenceGraph} from '../../entry_point';
 import {LogicalFileSystem, resolve} from '../../file_system';
 import {AbsoluteModuleStrategy, AliasingHost, AliasStrategy, DefaultImportTracker, ImportRewriter, LocalIdentifierStrategy, LogicalProjectStrategy, ModuleResolver, NoopImportRewriter, PrivateExportAliasingHost, R3SymbolsImportRewriter, Reference, ReferenceEmitStrategy, ReferenceEmitter, RelativePathStrategy, UnifiedModulesAliasingHost, UnifiedModulesStrategy} from '../../imports';
 import {IncrementalBuildStrategy, IncrementalDriver} from '../../incremental';
+import {SemanticSymbol} from '../../incremental/semantic_graph';
 import {generateAnalysis, IndexedComponent, IndexingContext} from '../../indexer';
 import {ComponentResources, CompoundMetadataReader, CompoundMetadataRegistry, DtsMetadataReader, InjectableClassRegistry, LocalMetadataRegistry, MetadataReader, ResourceRegistry} from '../../metadata';
 import {ModuleWithProvidersScanner} from '../../modulewithproviders';
@@ -32,6 +33,8 @@ import {TemplateTypeCheckerImpl} from '../../typecheck';
 import {OptimizeFor, TemplateTypeChecker, TypeCheckingConfig, TypeCheckingProgramStrategy} from '../../typecheck/api';
 import {getSourceFileOrNull, isDtsPath, resolveModuleName} from '../../util/src/typescript';
 import {LazyRoute, NgCompilerAdapter, NgCompilerOptions} from '../api';
+
+import {compileUndecoratedClassesWithAngularFeatures} from './config';
 
 /**
  * State information about a compilation which is only generated once some data is requested from
@@ -54,6 +57,149 @@ interface LazyCompilationState {
   templateTypeChecker: TemplateTypeChecker;
   resourceRegistry: ResourceRegistry;
 }
+
+
+
+/**
+ * Discriminant type for a `CompilationTicket`.
+ */
+export enum CompilationTicketKind {
+  Fresh,
+  IncrementalTypeScript,
+  IncrementalResource,
+}
+
+/**
+ * Begin an Angular compilation operation from scratch.
+ */
+export interface FreshCompilationTicket {
+  kind: CompilationTicketKind.Fresh;
+  options: NgCompilerOptions;
+  incrementalBuildStrategy: IncrementalBuildStrategy;
+  typeCheckingProgramStrategy: TypeCheckingProgramStrategy;
+  enableTemplateTypeChecker: boolean;
+  usePoisonedData: boolean;
+  tsProgram: ts.Program;
+}
+
+/**
+ * Begin an Angular compilation operation that incorporates changes to TypeScript code.
+ */
+export interface IncrementalTypeScriptCompilationTicket {
+  kind: CompilationTicketKind.IncrementalTypeScript;
+  options: NgCompilerOptions;
+  oldProgram: ts.Program;
+  newProgram: ts.Program;
+  incrementalBuildStrategy: IncrementalBuildStrategy;
+  typeCheckingProgramStrategy: TypeCheckingProgramStrategy;
+  newDriver: IncrementalDriver;
+  enableTemplateTypeChecker: boolean;
+  usePoisonedData: boolean;
+}
+
+export interface IncrementalResourceCompilationTicket {
+  kind: CompilationTicketKind.IncrementalResource;
+  compiler: NgCompiler;
+  modifiedResourceFiles: Set<string>;
+}
+
+/**
+ * A request to begin Angular compilation, either starting from scratch or from a known prior state.
+ *
+ * `CompilationTicket`s are used to initialize (or update) an `NgCompiler` instance, the core of the
+ * Angular compiler. They abstract the starting state of compilation and allow `NgCompiler` to be
+ * managed independently of any incremental compilation lifecycle.
+ */
+export type CompilationTicket = FreshCompilationTicket|IncrementalTypeScriptCompilationTicket|
+    IncrementalResourceCompilationTicket;
+
+/**
+ * Create a `CompilationTicket` for a brand new compilation, using no prior state.
+ */
+export function freshCompilationTicket(
+    tsProgram: ts.Program, options: NgCompilerOptions,
+    incrementalBuildStrategy: IncrementalBuildStrategy,
+    typeCheckingProgramStrategy: TypeCheckingProgramStrategy, enableTemplateTypeChecker: boolean,
+    usePoisonedData: boolean): CompilationTicket {
+  return {
+    kind: CompilationTicketKind.Fresh,
+    tsProgram,
+    options,
+    incrementalBuildStrategy,
+    typeCheckingProgramStrategy,
+    enableTemplateTypeChecker,
+    usePoisonedData,
+  };
+}
+
+/**
+ * Create a `CompilationTicket` as efficiently as possible, based on a previous `NgCompiler`
+ * instance and a new `ts.Program`.
+ */
+export function incrementalFromCompilerTicket(
+    oldCompiler: NgCompiler, newProgram: ts.Program,
+    incrementalBuildStrategy: IncrementalBuildStrategy,
+    typeCheckingProgramStrategy: TypeCheckingProgramStrategy,
+    modifiedResourceFiles: Set<string>): CompilationTicket {
+  const oldProgram = oldCompiler.getNextProgram();
+  const oldDriver = oldCompiler.incrementalStrategy.getIncrementalDriver(oldProgram);
+  if (oldDriver === null) {
+    // No incremental step is possible here, since no IncrementalDriver was found for the old
+    // program.
+    return freshCompilationTicket(
+        newProgram, oldCompiler.options, incrementalBuildStrategy, typeCheckingProgramStrategy,
+        oldCompiler.enableTemplateTypeChecker, oldCompiler.usePoisonedData);
+  }
+
+  const newDriver =
+      IncrementalDriver.reconcile(oldProgram, oldDriver, newProgram, modifiedResourceFiles);
+
+  return {
+    kind: CompilationTicketKind.IncrementalTypeScript,
+    enableTemplateTypeChecker: oldCompiler.enableTemplateTypeChecker,
+    usePoisonedData: oldCompiler.usePoisonedData,
+    options: oldCompiler.options,
+    incrementalBuildStrategy,
+    typeCheckingProgramStrategy,
+    newDriver,
+    oldProgram,
+    newProgram,
+  };
+}
+
+/**
+ * Create a `CompilationTicket` directly from an old `ts.Program` and associated Angular compilation
+ * state, along with a new `ts.Program`.
+ */
+export function incrementalFromDriverTicket(
+    oldProgram: ts.Program, oldDriver: IncrementalDriver, newProgram: ts.Program,
+    options: NgCompilerOptions, incrementalBuildStrategy: IncrementalBuildStrategy,
+    typeCheckingProgramStrategy: TypeCheckingProgramStrategy, modifiedResourceFiles: Set<string>,
+    enableTemplateTypeChecker: boolean, usePoisonedData: boolean): CompilationTicket {
+  const newDriver =
+      IncrementalDriver.reconcile(oldProgram, oldDriver, newProgram, modifiedResourceFiles);
+  return {
+    kind: CompilationTicketKind.IncrementalTypeScript,
+    oldProgram,
+    newProgram,
+    options,
+    incrementalBuildStrategy,
+    newDriver,
+    typeCheckingProgramStrategy,
+    enableTemplateTypeChecker,
+    usePoisonedData,
+  };
+}
+
+export function resourceChangeTicket(compiler: NgCompiler, modifiedResourceFiles: Set<string>):
+    IncrementalResourceCompilationTicket {
+  return {
+    kind: CompilationTicketKind.IncrementalResource,
+    compiler,
+    modifiedResourceFiles,
+  };
+}
+
 
 /**
  * The heart of the Angular Ivy compiler.
@@ -96,19 +242,60 @@ export class NgCompiler {
   private moduleResolver: ModuleResolver;
   private resourceManager: AdapterResourceLoader;
   private cycleAnalyzer: CycleAnalyzer;
-  readonly incrementalDriver: IncrementalDriver;
   readonly ignoreForDiagnostics: Set<ts.SourceFile>;
   readonly ignoreForEmit: Set<ts.SourceFile>;
 
-  constructor(
+  /**
+   * Convert a `CompilationTicket` into an `NgCompiler` instance for the requested compilation.
+   *
+   * Depending on the nature of the compilation request, the `NgCompiler` instance may be reused
+   * from a previous compilation and updated with any changes, it may be a new instance which
+   * incrementally reuses state from a previous compilation, or it may represent a fresh compilation
+   * entirely.
+   */
+  static fromTicket(
+      ticket: CompilationTicket, adapter: NgCompilerAdapter, perfRecorder?: PerfRecorder) {
+    switch (ticket.kind) {
+      case CompilationTicketKind.Fresh:
+        return new NgCompiler(
+            adapter,
+            ticket.options,
+            ticket.tsProgram,
+            ticket.typeCheckingProgramStrategy,
+            ticket.incrementalBuildStrategy,
+            IncrementalDriver.fresh(ticket.tsProgram),
+            ticket.enableTemplateTypeChecker,
+            ticket.usePoisonedData,
+            perfRecorder,
+        );
+      case CompilationTicketKind.IncrementalTypeScript:
+        return new NgCompiler(
+            adapter,
+            ticket.options,
+            ticket.newProgram,
+            ticket.typeCheckingProgramStrategy,
+            ticket.incrementalBuildStrategy,
+            ticket.newDriver,
+            ticket.enableTemplateTypeChecker,
+            ticket.usePoisonedData,
+            perfRecorder,
+        );
+      case CompilationTicketKind.IncrementalResource:
+        const compiler = ticket.compiler;
+        compiler.updateWithChangedResources(ticket.modifiedResourceFiles);
+        return compiler;
+    }
+  }
+
+  private constructor(
       private adapter: NgCompilerAdapter,
-      private options: NgCompilerOptions,
+      readonly options: NgCompilerOptions,
       private tsProgram: ts.Program,
-      private typeCheckingProgramStrategy: TypeCheckingProgramStrategy,
-      private incrementalStrategy: IncrementalBuildStrategy,
-      private enableTemplateTypeChecker: boolean,
-      private usePoisonedData: boolean,
-      oldProgram: ts.Program|null = null,
+      readonly typeCheckingProgramStrategy: TypeCheckingProgramStrategy,
+      readonly incrementalStrategy: IncrementalBuildStrategy,
+      readonly incrementalDriver: IncrementalDriver,
+      readonly enableTemplateTypeChecker: boolean,
+      readonly usePoisonedData: boolean,
       private perfRecorder: PerfRecorder = NOOP_PERF_RECORDER,
   ) {
     this.constructionDiagnostics.push(...this.adapter.constructionDiagnostics);
@@ -136,32 +323,41 @@ export class NgCompiler {
         new ModuleResolver(tsProgram, this.options, this.adapter, moduleResolutionCache);
     this.resourceManager = new AdapterResourceLoader(adapter, this.options);
     this.cycleAnalyzer = new CycleAnalyzer(new ImportGraph(this.moduleResolver));
-
-    let modifiedResourceFiles: Set<string>|null = null;
-    if (this.adapter.getModifiedResourceFiles !== undefined) {
-      modifiedResourceFiles = this.adapter.getModifiedResourceFiles() || null;
-    }
-
-    if (oldProgram === null) {
-      this.incrementalDriver = IncrementalDriver.fresh(tsProgram);
-    } else {
-      const oldDriver = this.incrementalStrategy.getIncrementalDriver(oldProgram);
-      if (oldDriver !== null) {
-        this.incrementalDriver =
-            IncrementalDriver.reconcile(oldProgram, oldDriver, tsProgram, modifiedResourceFiles);
-      } else {
-        // A previous ts.Program was used to create the current one, but it wasn't from an
-        // `NgCompiler`. That doesn't hurt anything, but the Angular analysis will have to start
-        // from a fresh state.
-        this.incrementalDriver = IncrementalDriver.fresh(tsProgram);
-      }
-    }
     this.incrementalStrategy.setIncrementalDriver(this.incrementalDriver, tsProgram);
 
     this.ignoreForDiagnostics =
         new Set(tsProgram.getSourceFiles().filter(sf => this.adapter.isShim(sf)));
-
     this.ignoreForEmit = this.adapter.ignoreForEmit;
+  }
+
+  private updateWithChangedResources(changedResources: Set<string>): void {
+    if (this.compilation === null) {
+      // Analysis hasn't happened yet, so no update is necessary - any changes to resources will be
+      // captured by the inital analysis pass itself.
+      return;
+    }
+
+    this.resourceManager.invalidate();
+
+    const classesToUpdate = new Set<DeclarationNode>();
+    for (const resourceFile of changedResources) {
+      for (const templateClass of this.getComponentsWithTemplateFile(resourceFile)) {
+        classesToUpdate.add(templateClass);
+      }
+
+      for (const styleClass of this.getComponentsWithStyleFile(resourceFile)) {
+        classesToUpdate.add(styleClass);
+      }
+    }
+
+    for (const clazz of classesToUpdate) {
+      this.compilation.traitCompiler.updateResources(clazz);
+      if (!ts.isClassDeclaration(clazz)) {
+        continue;
+      }
+
+      this.compilation.templateTypeChecker.invalidateClass(clazz);
+    }
   }
 
   /**
@@ -441,8 +637,6 @@ export class NgCompiler {
   private resolveCompilation(traitCompiler: TraitCompiler): void {
     traitCompiler.resolve();
 
-    this.recordNgModuleScopeDependencies();
-
     // At this point, analysis is complete and the compiler can now calculate which files need to
     // be emitted, so do that.
     this.incrementalDriver.recordSuccessfulAnalysis(traitCompiler);
@@ -615,74 +809,6 @@ export class NgCompiler {
     return this.nonTemplateDiagnostics;
   }
 
-  /**
-   * Reifies the inter-dependencies of NgModules and the components within their compilation scopes
-   * into the `IncrementalDriver`'s dependency graph.
-   */
-  private recordNgModuleScopeDependencies() {
-    const recordSpan = this.perfRecorder.start('recordDependencies');
-    const depGraph = this.incrementalDriver.depGraph;
-
-    for (const scope of this.compilation!.scopeRegistry!.getCompilationScopes()) {
-      const file = scope.declaration.getSourceFile();
-      const ngModuleFile = scope.ngModule.getSourceFile();
-
-      // A change to any dependency of the declaration causes the declaration to be invalidated,
-      // which requires the NgModule to be invalidated as well.
-      depGraph.addTransitiveDependency(ngModuleFile, file);
-
-      // A change to the NgModule file should cause the declaration itself to be invalidated.
-      depGraph.addDependency(file, ngModuleFile);
-
-      const meta =
-          this.compilation!.metaReader.getDirectiveMetadata(new Reference(scope.declaration));
-      if (meta !== null && meta.isComponent) {
-        // If a component's template changes, it might have affected the import graph, and thus the
-        // remote scoping feature which is activated in the event of potential import cycles. Thus,
-        // the module depends not only on the transitive dependencies of the component, but on its
-        // resources as well.
-        depGraph.addTransitiveResources(ngModuleFile, file);
-
-        // A change to any directive/pipe in the compilation scope should cause the component to be
-        // invalidated.
-        for (const directive of scope.directives) {
-          // When a directive in scope is updated, the component needs to be recompiled as e.g. a
-          // selector may have changed.
-          depGraph.addTransitiveDependency(file, directive.ref.node.getSourceFile());
-        }
-        for (const pipe of scope.pipes) {
-          // When a pipe in scope is updated, the component needs to be recompiled as e.g. the
-          // pipe's name may have changed.
-          depGraph.addTransitiveDependency(file, pipe.ref.node.getSourceFile());
-        }
-
-        // Components depend on the entire export scope. In addition to transitive dependencies on
-        // all directives/pipes in the export scope, they also depend on every NgModule in the
-        // scope, as changes to a module may add new directives/pipes to the scope.
-        for (const depModule of scope.ngModules) {
-          // There is a correctness issue here. To be correct, this should be a transitive
-          // dependency on the depModule file, since the depModule's exports might change via one of
-          // its dependencies, even if depModule's file itself doesn't change. However, doing this
-          // would also trigger recompilation if a non-exported component or directive changed,
-          // which causes performance issues for rebuilds.
-          //
-          // Given the rebuild issue is an edge case, currently we err on the side of performance
-          // instead of correctness. A correct and performant design would distinguish between
-          // changes to the depModule which affect its export scope and changes which do not, and
-          // only add a dependency for the former. This concept is currently in development.
-          //
-          // TODO(alxhub): fix correctness issue by understanding the semantics of the dependency.
-          depGraph.addDependency(file, depModule.getSourceFile());
-        }
-      } else {
-        // Directives (not components) and pipes only depend on the NgModule which directly declares
-        // them.
-        depGraph.addDependency(file, ngModuleFile);
-      }
-    }
-    this.perfRecorder.stop(recordSpan);
-  }
-
   private scanForMwp(sf: ts.SourceFile): void {
     this.compilation!.mwpScanner.scan(sf, {
       addTypeReplacement: (node: ts.Declaration, type: Type): void => {
@@ -762,6 +888,7 @@ export class NgCompiler {
     const scopeRegistry =
         new LocalModuleScopeRegistry(localMetaReader, depScopeReader, refEmitter, aliasingHost);
     const scopeReader: ComponentScopeReader = scopeRegistry;
+    const semanticDepGraphUpdater = this.incrementalDriver.getSemanticDepGraphUpdater();
     const metaRegistry = new CompoundMetadataRegistry([localMetaRegistry, scopeRegistry]);
     const injectableRegistry = new InjectableClassRegistry(reflector);
 
@@ -792,8 +919,18 @@ export class NgCompiler {
     const defaultImportTracker = new DefaultImportTracker();
     const resourceRegistry = new ResourceRegistry();
 
+    const compilationMode =
+        this.options.compilationMode === 'partial' ? CompilationMode.PARTIAL : CompilationMode.FULL;
+
+    // Cycles are handled in full compilation mode by "remote scoping".
+    // "Remote scoping" does not work well with tree shaking for libraries.
+    // So in partial compilation mode, when building a library, a cycle will cause an error.
+    const cycleHandlingStrategy = compilationMode === CompilationMode.FULL ?
+        CycleHandlingStrategy.UseRemoteScoping :
+        CycleHandlingStrategy.Error;
+
     // Set up the IvyCompilation, which manages state for the Ivy transformer.
-    const handlers: DecoratorHandler<unknown, unknown, unknown>[] = [
+    const handlers: DecoratorHandler<unknown, unknown, SemanticSymbol|null, unknown>[] = [
       new ComponentDecoratorHandler(
           reflector, evaluator, metaRegistry, metaReader, scopeReader, scopeRegistry,
           typeCheckScopeRegistry, resourceRegistry, isCore, this.resourceManager,
@@ -801,19 +938,17 @@ export class NgCompiler {
           this.options.i18nUseExternalIds !== false,
           this.options.enableI18nLegacyMessageIdFormat !== false, this.usePoisonedData,
           this.options.i18nNormalizeLineEndingsInICUs, this.moduleResolver, this.cycleAnalyzer,
-          refEmitter, defaultImportTracker, this.incrementalDriver.depGraph, injectableRegistry,
-          this.closureCompilerEnabled),
+          cycleHandlingStrategy, refEmitter, defaultImportTracker, this.incrementalDriver.depGraph,
+          injectableRegistry, semanticDepGraphUpdater, this.closureCompilerEnabled),
+
       // TODO(alxhub): understand why the cast here is necessary (something to do with `null`
       // not being assignable to `unknown` when wrapped in `Readonly`).
       // clang-format off
         new DirectiveDecoratorHandler(
             reflector, evaluator, metaRegistry, scopeRegistry, metaReader,
-            defaultImportTracker, injectableRegistry, isCore, this.closureCompilerEnabled,
-            // In ngtsc we no longer want to compile undecorated classes with Angular features.
-            // Migrations for these patterns ran as part of `ng update` and we want to ensure
-            // that projects do not regress. See https://hackmd.io/@alx/ryfYYuvzH for more details.
-            /* compileUndecoratedClassesWithAngularFeatures */ false
-        ) as Readonly<DecoratorHandler<unknown, unknown, unknown>>,
+            defaultImportTracker, injectableRegistry, isCore, semanticDepGraphUpdater,
+          this.closureCompilerEnabled, compileUndecoratedClassesWithAngularFeatures,
+        ) as Readonly<DecoratorHandler<unknown, unknown, SemanticSymbol | null,unknown>>,
       // clang-format on
       // Pipe handler must be before injectable handler in list so pipe factories are printed
       // before injectable factories (so injectable factories can delegate to them)
@@ -829,11 +964,10 @@ export class NgCompiler {
           this.closureCompilerEnabled, injectableRegistry, this.options.i18nInLocale),
     ];
 
-    const compilationMode =
-        this.options.compilationMode === 'partial' ? CompilationMode.PARTIAL : CompilationMode.FULL;
     const traitCompiler = new TraitCompiler(
         handlers, reflector, this.perfRecorder, this.incrementalDriver,
-        this.options.compileNonExportedClasses !== false, compilationMode, dtsTransforms);
+        this.options.compileNonExportedClasses !== false, compilationMode, dtsTransforms,
+        semanticDepGraphUpdater);
 
     const templateTypeChecker = new TemplateTypeCheckerImpl(
         this.tsProgram, this.typeCheckingProgramStrategy, traitCompiler,

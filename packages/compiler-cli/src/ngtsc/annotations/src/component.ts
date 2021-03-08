@@ -9,14 +9,15 @@
 import {compileComponentFromMetadata, compileDeclareComponentFromMetadata, ConstantPool, CssSelector, DeclarationListEmitMode, DEFAULT_INTERPOLATION_CONFIG, DomElementSchemaRegistry, Expression, ExternalExpr, Identifiers, InterpolationConfig, LexerRange, makeBindingParser, ParsedTemplate, ParseSourceFile, parseTemplate, R3ComponentDef, R3ComponentMetadata, R3FactoryTarget, R3TargetBinder, R3UsedDirectiveMetadata, SelectorMatcher, Statement, TmplAstNode, WrappedNodeExpr} from '@angular/compiler';
 import * as ts from 'typescript';
 
-import {CycleAnalyzer} from '../../cycles';
-import {ErrorCode, FatalDiagnosticError} from '../../diagnostics';
+import {Cycle, CycleAnalyzer, CycleHandlingStrategy} from '../../cycles';
+import {ErrorCode, FatalDiagnosticError, makeDiagnostic, makeRelatedInformation} from '../../diagnostics';
 import {absoluteFrom, relative} from '../../file_system';
 import {DefaultImportRecorder, ModuleResolver, Reference, ReferenceEmitter} from '../../imports';
 import {DependencyTracker} from '../../incremental/api';
+import {extractSemanticTypeParameters, isArrayEqual, isReferenceEqual, SemanticDepGraphUpdater, SemanticReference, SemanticSymbol} from '../../incremental/semantic_graph';
 import {IndexingContext} from '../../indexer';
 import {ClassPropertyMapping, ComponentResources, DirectiveMeta, DirectiveTypeCheckMeta, extractDirectiveTypeCheckMeta, InjectableClassRegistry, MetadataReader, MetadataRegistry, Resource, ResourceRegistry} from '../../metadata';
-import {EnumValue, PartialEvaluator} from '../../partial_evaluator';
+import {EnumValue, PartialEvaluator, ResolvedValue} from '../../partial_evaluator';
 import {ClassDeclaration, DeclarationNode, Decorator, ReflectionHost, reflectObjectLiteral} from '../../reflection';
 import {ComponentScopeReader, LocalModuleScopeRegistry, TypeCheckScopeRegistry} from '../../scope';
 import {AnalysisOutput, CompileResult, DecoratorHandler, DetectResult, HandlerFlags, HandlerPrecedence, ResolveResult} from '../../transform';
@@ -26,9 +27,10 @@ import {SubsetOfKeys} from '../../util/src/typescript';
 
 import {ResourceLoader} from './api';
 import {createValueHasWrongTypeError, getDirectiveDiagnostics, getProviderDiagnostics} from './diagnostics';
-import {extractDirectiveMetadata, parseFieldArrayValue} from './directive';
+import {DirectiveSymbol, extractDirectiveMetadata, parseFieldArrayValue} from './directive';
 import {compileNgFactoryDefField} from './factory';
 import {generateSetClassMetadataCall} from './metadata';
+import {NgModuleSymbol} from './ng_module';
 import {findAngularDecorator, isAngularCoreReference, isExpressionForwardReference, readBaseClass, resolveProvidersRequiringFactory, unwrapExpression, wrapFunctionExpressionsInParens} from './util';
 
 const EMPTY_MAP = new Map<string, Expression>();
@@ -71,16 +73,125 @@ export interface ComponentAnalysisData {
 
   resources: ComponentResources;
 
+  /**
+   * `styleUrls` extracted from the decorator, if present.
+   */
+  styleUrls: StyleUrlMeta[]|null;
+
+  /**
+   * Inline stylesheets extracted from the decorator, if present.
+   */
+  inlineStyles: string[]|null;
+
   isPoisoned: boolean;
 }
 
 export type ComponentResolutionData = Pick<R3ComponentMetadata, ComponentMetadataResolvedFields>;
 
 /**
+ * The literal style url extracted from the decorator, along with metadata for diagnostics.
+ */
+export interface StyleUrlMeta {
+  url: string;
+  nodeForError: ts.Node;
+  source: ResourceTypeForDiagnostics.StylesheetFromTemplate|
+      ResourceTypeForDiagnostics.StylesheetFromDecorator;
+}
+
+/**
+ * Information about the origin of a resource in the application code. This is used for creating
+ * diagnostics, so we can point to the root cause of an error in the application code.
+ *
+ * A template resource comes from the `templateUrl` property on the component decorator.
+ *
+ * Stylesheets resources can come from either the `styleUrls` property on the component decorator,
+ * or from inline `style` tags and style links on the external template.
+ */
+export const enum ResourceTypeForDiagnostics {
+  Template,
+  StylesheetFromTemplate,
+  StylesheetFromDecorator,
+}
+
+/**
+ * Represents an Angular component.
+ */
+export class ComponentSymbol extends DirectiveSymbol {
+  usedDirectives: SemanticReference[] = [];
+  usedPipes: SemanticReference[] = [];
+  isRemotelyScoped = false;
+
+  isEmitAffected(previousSymbol: SemanticSymbol, publicApiAffected: Set<SemanticSymbol>): boolean {
+    if (!(previousSymbol instanceof ComponentSymbol)) {
+      return true;
+    }
+
+    // Create an equality function that considers symbols equal if they represent the same
+    // declaration, but only if the symbol in the current compilation does not have its public API
+    // affected.
+    const isSymbolUnaffected = (current: SemanticReference, previous: SemanticReference) =>
+        isReferenceEqual(current, previous) && !publicApiAffected.has(current.symbol);
+
+    // The emit of a component is affected if either of the following is true:
+    //  1. The component used to be remotely scoped but no longer is, or vice versa.
+    //  2. The list of used directives has changed or any of those directives have had their public
+    //     API changed. If the used directives have been reordered but not otherwise affected then
+    //     the component must still be re-emitted, as this may affect directive instantiation order.
+    //  3. The list of used pipes has changed, or any of those pipes have had their public API
+    //     changed.
+    return this.isRemotelyScoped !== previousSymbol.isRemotelyScoped ||
+        !isArrayEqual(this.usedDirectives, previousSymbol.usedDirectives, isSymbolUnaffected) ||
+        !isArrayEqual(this.usedPipes, previousSymbol.usedPipes, isSymbolUnaffected);
+  }
+
+  isTypeCheckBlockAffected(
+      previousSymbol: SemanticSymbol, typeCheckApiAffected: Set<SemanticSymbol>): boolean {
+    if (!(previousSymbol instanceof ComponentSymbol)) {
+      return true;
+    }
+
+    // To verify that a used directive is not affected we need to verify that its full inheritance
+    // chain is not present in `typeCheckApiAffected`.
+    const isInheritanceChainAffected = (symbol: SemanticSymbol): boolean => {
+      let currentSymbol: SemanticSymbol|null = symbol;
+      while (currentSymbol instanceof DirectiveSymbol) {
+        if (typeCheckApiAffected.has(currentSymbol)) {
+          return true;
+        }
+        currentSymbol = currentSymbol.baseClass;
+      }
+
+      return false;
+    };
+
+    // Create an equality function that considers directives equal if they represent the same
+    // declaration and if the symbol and all symbols it inherits from in the current compilation
+    // do not have their type-check API affected.
+    const isDirectiveUnaffected = (current: SemanticReference, previous: SemanticReference) =>
+        isReferenceEqual(current, previous) && !isInheritanceChainAffected(current.symbol);
+
+    // Create an equality function that considers pipes equal if they represent the same
+    // declaration and if the symbol in the current compilation does not have its type-check
+    // API affected.
+    const isPipeUnaffected = (current: SemanticReference, previous: SemanticReference) =>
+        isReferenceEqual(current, previous) && !typeCheckApiAffected.has(current.symbol);
+
+    // The emit of a type-check block of a component is affected if either of the following is true:
+    //  1. The list of used directives has changed or any of those directives have had their
+    //     type-check API changed.
+    //  2. The list of used pipes has changed, or any of those pipes have had their type-check API
+    //     changed.
+    return !isArrayEqual(
+               this.usedDirectives, previousSymbol.usedDirectives, isDirectiveUnaffected) ||
+        !isArrayEqual(this.usedPipes, previousSymbol.usedPipes, isPipeUnaffected);
+  }
+}
+
+/**
  * `DecoratorHandler` which handles the `@Component` annotation.
  */
 export class ComponentDecoratorHandler implements
-    DecoratorHandler<Decorator, ComponentAnalysisData, ComponentResolutionData> {
+    DecoratorHandler<Decorator, ComponentAnalysisData, ComponentSymbol, ComponentResolutionData> {
   constructor(
       private reflector: ReflectionHost, private evaluator: PartialEvaluator,
       private metaRegistry: MetadataRegistry, private metaReader: MetadataReader,
@@ -92,9 +203,11 @@ export class ComponentDecoratorHandler implements
       private enableI18nLegacyMessageIdFormat: boolean, private usePoisonedData: boolean,
       private i18nNormalizeLineEndingsInICUs: boolean|undefined,
       private moduleResolver: ModuleResolver, private cycleAnalyzer: CycleAnalyzer,
-      private refEmitter: ReferenceEmitter, private defaultImportRecorder: DefaultImportRecorder,
+      private cycleHandlingStrategy: CycleHandlingStrategy, private refEmitter: ReferenceEmitter,
+      private defaultImportRecorder: DefaultImportRecorder,
       private depTracker: DependencyTracker|null,
       private injectableRegistry: InjectableClassRegistry,
+      private semanticDepGraphUpdater: SemanticDepGraphUpdater|null,
       private annotateForClosureCompiler: boolean) {}
 
   private literalCache = new Map<Decorator, ts.ObjectLiteralExpression>();
@@ -147,33 +260,48 @@ export class ComponentDecoratorHandler implements
     const component = reflectObjectLiteral(meta);
     const containingFile = node.getSourceFile().fileName;
 
-    // Convert a styleUrl string into a Promise to preload it.
-    const resolveStyleUrl = (styleUrl: string): Promise<void> => {
-      const resourceUrl = this.resourceLoader.resolve(styleUrl, containingFile);
-      const promise = this.resourceLoader.preload(resourceUrl);
-      return promise || Promise.resolve();
-    };
+    const resolveStyleUrl =
+        (styleUrl: string, nodeForError: ts.Node,
+         resourceType: ResourceTypeForDiagnostics): Promise<void>|undefined => {
+          const resourceUrl =
+              this._resolveResourceOrThrow(styleUrl, containingFile, nodeForError, resourceType);
+          return this.resourceLoader.preload(resourceUrl);
+        };
 
     // A Promise that waits for the template and all <link>ed styles within it to be preloaded.
     const templateAndTemplateStyleResources =
-        this._preloadAndParseTemplate(node, decorator, component, containingFile).then(template => {
-          if (template === null) {
-            return undefined;
-          } else {
-            return Promise.all(template.styleUrls.map(resolveStyleUrl)).then(() => undefined);
-          }
-        });
+        this._preloadAndParseTemplate(node, decorator, component, containingFile)
+            .then((template: ParsedTemplateWithSource|null): Promise<void>|undefined => {
+              if (template === null) {
+                return undefined;
+              }
+
+              const nodeForError = getTemplateDeclarationNodeForError(template.declaration);
+              return Promise
+                  .all(template.styleUrls.map(
+                      styleUrl => resolveStyleUrl(
+                          styleUrl, nodeForError,
+                          ResourceTypeForDiagnostics.StylesheetFromTemplate)))
+                  .then(() => undefined);
+            });
 
     // Extract all the styleUrls in the decorator.
-    const styleUrls = this._extractStyleUrls(component, []);
+    const componentStyleUrls = this._extractComponentStyleUrls(component);
 
-    if (styleUrls === null) {
+    if (componentStyleUrls === null) {
       // A fast path exists if there are no styleUrls, to just wait for
       // templateAndTemplateStyleResources.
       return templateAndTemplateStyleResources;
     } else {
       // Wait for both the template and all styleUrl resources to resolve.
-      return Promise.all([templateAndTemplateStyleResources, ...styleUrls.map(resolveStyleUrl)])
+      return Promise
+          .all([
+            templateAndTemplateStyleResources,
+            ...componentStyleUrls.map(
+                styleUrl => resolveStyleUrl(
+                    styleUrl.url, styleUrl.nodeForError,
+                    ResourceTypeForDiagnostics.StylesheetFromDecorator))
+          ])
           .then(() => undefined);
     }
   }
@@ -246,61 +374,49 @@ export class ComponentDecoratorHandler implements
 
       template = preanalyzed;
     } else {
-      // The template was not already parsed. Either there's a templateUrl, or an inline template.
-      if (component.has('templateUrl')) {
-        const templateUrlExpr = component.get('templateUrl')!;
-        const templateUrl = this.evaluator.evaluate(templateUrlExpr);
-        if (typeof templateUrl !== 'string') {
-          throw createValueHasWrongTypeError(
-              templateUrlExpr, templateUrl, 'templateUrl must be a string');
-        }
-        const resourceUrl = this.resourceLoader.resolve(templateUrl, containingFile);
-        template = this._extractExternalTemplate(node, component, templateUrlExpr, resourceUrl);
-      } else {
-        // Expect an inline template to be present.
-        template = this._extractInlineTemplate(node, decorator, component, containingFile);
-      }
+      const templateDecl = this.parseTemplateDeclaration(decorator, component, containingFile);
+      template = this.extractTemplate(node, templateDecl);
     }
-    const templateResource = template.isInline ?
-        {path: null, expression: component.get('template')!} :
-        {path: absoluteFrom(template.templateUrl), expression: template.sourceMapping.node};
+    const templateResource =
+        template.isInline ? {path: null, expression: component.get('template')!} : {
+          path: absoluteFrom(template.declaration.resolvedTemplateUrl),
+          expression: template.sourceMapping.node
+        };
 
     // Figure out the set of styles. The ordering here is important: external resources (styleUrls)
     // precede inline styles, and styles defined in the template override styles defined in the
     // component.
-    let styles: string[]|null = null;
+    let styles: string[] = [];
 
     const styleResources = this._extractStyleResources(component, containingFile);
-    const styleUrls = this._extractStyleUrls(component, template.styleUrls);
-    if (styleUrls !== null) {
-      if (styles === null) {
-        styles = [];
-      }
-      for (const styleUrl of styleUrls) {
-        const resourceUrl = this.resourceLoader.resolve(styleUrl, containingFile);
-        const resourceStr = this.resourceLoader.load(resourceUrl);
-        styles.push(resourceStr);
-        if (this.depTracker !== null) {
-          this.depTracker.addResourceDependency(node.getSourceFile(), absoluteFrom(resourceUrl));
-        }
+    const styleUrls: StyleUrlMeta[] = [
+      ...this._extractComponentStyleUrls(component), ...this._extractTemplateStyleUrls(template)
+    ];
+
+    for (const styleUrl of styleUrls) {
+      const resourceType = styleUrl.source === ResourceTypeForDiagnostics.StylesheetFromDecorator ?
+          ResourceTypeForDiagnostics.StylesheetFromDecorator :
+          ResourceTypeForDiagnostics.StylesheetFromTemplate;
+      const resourceUrl = this._resolveResourceOrThrow(
+          styleUrl.url, containingFile, styleUrl.nodeForError, resourceType);
+      const resourceStr = this.resourceLoader.load(resourceUrl);
+
+      styles.push(resourceStr);
+      if (this.depTracker !== null) {
+        this.depTracker.addResourceDependency(node.getSourceFile(), absoluteFrom(resourceUrl));
       }
     }
+
+    let inlineStyles: string[]|null = null;
     if (component.has('styles')) {
       const litStyles = parseFieldArrayValue(component, 'styles', this.evaluator);
       if (litStyles !== null) {
-        if (styles === null) {
-          styles = litStyles;
-        } else {
-          styles.push(...litStyles);
-        }
+        inlineStyles = [...litStyles];
+        styles.push(...litStyles);
       }
     }
     if (template.styles.length > 0) {
-      if (styles === null) {
-        styles = template.styles;
-      } else {
-        styles.push(...template.styles);
-      }
+      styles.push(...template.styles);
     }
 
     const encapsulation: number =
@@ -327,7 +443,7 @@ export class ComponentDecoratorHandler implements
           },
           encapsulation,
           interpolation: template.interpolationConfig ?? DEFAULT_INTERPOLATION_CONFIG,
-          styles: styles || [],
+          styles,
 
           // These will be replaced during the compilation step, after all `NgModule`s have been
           // analyzed and the full compilation scope for the component can be realized.
@@ -343,6 +459,8 @@ export class ComponentDecoratorHandler implements
         template,
         providersRequiringFactory,
         viewProvidersRequiringFactory,
+        inlineStyles,
+        styleUrls,
         resources: {
           styles: styleResources,
           template: templateResource,
@@ -354,6 +472,14 @@ export class ComponentDecoratorHandler implements
       output.analysis!.meta.changeDetection = changeDetection;
     }
     return output;
+  }
+
+  symbol(node: ClassDeclaration, analysis: Readonly<ComponentAnalysisData>): ComponentSymbol {
+    const typeParameters = extractSemanticTypeParameters(node);
+
+    return new ComponentSymbol(
+        node, analysis.meta.selector, analysis.inputs, analysis.outputs, analysis.meta.exportAs,
+        analysis.typeCheckMeta, typeParameters);
   }
 
   register(node: ClassDeclaration, analysis: ComponentAnalysisData): void {
@@ -435,8 +561,13 @@ export class ComponentDecoratorHandler implements
         meta.template.sourceMapping, meta.template.file, meta.template.errors);
   }
 
-  resolve(node: ClassDeclaration, analysis: Readonly<ComponentAnalysisData>):
-      ResolveResult<ComponentResolutionData> {
+  resolve(
+      node: ClassDeclaration, analysis: Readonly<ComponentAnalysisData>,
+      symbol: ComponentSymbol): ResolveResult<ComponentResolutionData> {
+    if (this.semanticDepGraphUpdater !== null && analysis.baseClass instanceof Reference) {
+      symbol.baseClass = this.semanticDepGraphUpdater.getSymbol(analysis.baseClass.node);
+    }
+
     if (analysis.isPoisoned && !this.usePoisonedData) {
       return {};
     }
@@ -497,7 +628,7 @@ export class ComponentDecoratorHandler implements
       const bound = binder.bind({template: metadata.template.nodes});
 
       // The BoundTarget knows which directives and pipes matched the template.
-      type UsedDirective = R3UsedDirectiveMetadata&{ref: Reference};
+      type UsedDirective = R3UsedDirectiveMetadata&{ref: Reference<ClassDeclaration>};
       const usedDirectives: UsedDirective[] = bound.getUsedDirectives().map(directive => {
         return {
           ref: directive.ref,
@@ -506,10 +637,11 @@ export class ComponentDecoratorHandler implements
           inputs: directive.inputs.propertyNames,
           outputs: directive.outputs.propertyNames,
           exportAs: directive.exportAs,
+          isComponent: directive.isComponent,
         };
       });
-
-      const usedPipes: {ref: Reference, pipeName: string, expression: Expression}[] = [];
+      type UsedPipe = {ref: Reference<ClassDeclaration>, pipeName: string, expression: Expression};
+      const usedPipes: UsedPipe[] = [];
       for (const pipeName of bound.getUsedPipes()) {
         if (!pipes.has(pipeName)) {
           continue;
@@ -521,12 +653,32 @@ export class ComponentDecoratorHandler implements
           expression: this.refEmitter.emit(pipe, context),
         });
       }
+      if (this.semanticDepGraphUpdater !== null) {
+        symbol.usedDirectives = usedDirectives.map(
+            dir => this.semanticDepGraphUpdater!.getSemanticReference(dir.ref.node, dir.type));
+        symbol.usedPipes = usedPipes.map(
+            pipe =>
+                this.semanticDepGraphUpdater!.getSemanticReference(pipe.ref.node, pipe.expression));
+      }
 
       // Scan through the directives/pipes actually used in the template and check whether any
       // import which needs to be generated would create a cycle.
-      const cycleDetected = usedDirectives.some(dir => this._isCyclicImport(dir.type, context)) ||
-          usedPipes.some(pipe => this._isCyclicImport(pipe.expression, context));
+      const cyclesFromDirectives = new Map<UsedDirective, Cycle>();
+      for (const usedDirective of usedDirectives) {
+        const cycle = this._checkForCyclicImport(usedDirective.ref, usedDirective.type, context);
+        if (cycle !== null) {
+          cyclesFromDirectives.set(usedDirective, cycle);
+        }
+      }
+      const cyclesFromPipes = new Map<UsedPipe, Cycle>();
+      for (const usedPipe of usedPipes) {
+        const cycle = this._checkForCyclicImport(usedPipe.ref, usedPipe.expression, context);
+        if (cycle !== null) {
+          cyclesFromPipes.set(usedPipe, cycle);
+        }
+      }
 
+      const cycleDetected = cyclesFromDirectives.size !== 0 || cyclesFromPipes.size !== 0;
       if (!cycleDetected) {
         // No cycle was detected. Record the imports that need to be created in the cycle detector
         // so that future cyclic import checks consider their production.
@@ -552,11 +704,43 @@ export class ComponentDecoratorHandler implements
             DeclarationListEmitMode.Closure :
             DeclarationListEmitMode.Direct;
       } else {
-        // Declaring the directiveDefs/pipeDefs arrays directly would require imports that would
-        // create a cycle. Instead, mark this component as requiring remote scoping, so that the
-        // NgModule file will take care of setting the directives for the component.
-        this.scopeRegistry.setComponentRemoteScope(
-            node, usedDirectives.map(dir => dir.ref), usedPipes.map(pipe => pipe.ref));
+        if (this.cycleHandlingStrategy === CycleHandlingStrategy.UseRemoteScoping) {
+          // Declaring the directiveDefs/pipeDefs arrays directly would require imports that would
+          // create a cycle. Instead, mark this component as requiring remote scoping, so that the
+          // NgModule file will take care of setting the directives for the component.
+          this.scopeRegistry.setComponentRemoteScope(
+              node, usedDirectives.map(dir => dir.ref), usedPipes.map(pipe => pipe.ref));
+          symbol.isRemotelyScoped = true;
+
+          // If a semantic graph is being tracked, record the fact that this component is remotely
+          // scoped with the declaring NgModule symbol as the NgModule's emit becomes dependent on
+          // the directive/pipe usages of this component.
+          if (this.semanticDepGraphUpdater !== null) {
+            const moduleSymbol = this.semanticDepGraphUpdater.getSymbol(scope.ngModule);
+            if (!(moduleSymbol instanceof NgModuleSymbol)) {
+              throw new Error(
+                  `AssertionError: Expected ${scope.ngModule.name} to be an NgModuleSymbol.`);
+            }
+
+            moduleSymbol.addRemotelyScopedComponent(
+                symbol, symbol.usedDirectives, symbol.usedPipes);
+          }
+        } else {
+          // We are not able to handle this cycle so throw an error.
+          const relatedMessages: ts.DiagnosticRelatedInformation[] = [];
+          for (const [dir, cycle] of cyclesFromDirectives) {
+            relatedMessages.push(
+                makeCyclicImportInfo(dir.ref, dir.isComponent ? 'component' : 'directive', cycle));
+          }
+          for (const [pipe, cycle] of cyclesFromPipes) {
+            relatedMessages.push(makeCyclicImportInfo(pipe.ref, 'pipe', cycle));
+          }
+          throw new FatalDiagnosticError(
+              ErrorCode.IMPORT_CYCLE_DETECTED, node,
+              'One or more import cycles would need to be created to compile this component, ' +
+                  'which is not supported by the current compiler configuration.',
+              relatedMessages);
+        }
       }
     }
 
@@ -589,6 +773,42 @@ export class ComponentDecoratorHandler implements
     }
 
     return {data};
+  }
+
+  updateResources(node: ClassDeclaration, analysis: ComponentAnalysisData): void {
+    const containingFile = node.getSourceFile().fileName;
+
+    // If the template is external, re-parse it.
+    const templateDecl = analysis.template.declaration;
+    if (!templateDecl.isInline) {
+      analysis.template = this.extractTemplate(node, templateDecl);
+    }
+
+    // Update any external stylesheets and rebuild the combined 'styles' list.
+    // TODO(alxhub): write tests for styles when the primary compiler uses the updateResources path
+    let styles: string[] = [];
+    if (analysis.styleUrls !== null) {
+      for (const styleUrl of analysis.styleUrls) {
+        const resourceType =
+            styleUrl.source === ResourceTypeForDiagnostics.StylesheetFromDecorator ?
+            ResourceTypeForDiagnostics.StylesheetFromDecorator :
+            ResourceTypeForDiagnostics.StylesheetFromTemplate;
+        const resolvedStyleUrl = this._resolveResourceOrThrow(
+            styleUrl.url, containingFile, styleUrl.nodeForError, resourceType);
+        const styleText = this.resourceLoader.load(resolvedStyleUrl);
+        styles.push(styleText);
+      }
+    }
+    if (analysis.inlineStyles !== null) {
+      for (const styleText of analysis.inlineStyles) {
+        styles.push(styleText);
+      }
+    }
+    for (const styleText of analysis.template.styles) {
+      styles.push(styleText);
+    }
+
+    analysis.meta.styles = styles;
   }
 
   compileFull(
@@ -670,20 +890,54 @@ export class ComponentDecoratorHandler implements
     return resolved;
   }
 
-  private _extractStyleUrls(component: Map<string, ts.Expression>, extraUrls: string[]):
-      string[]|null {
+  private _extractComponentStyleUrls(
+      component: Map<string, ts.Expression>,
+      ): StyleUrlMeta[] {
     if (!component.has('styleUrls')) {
-      return extraUrls.length > 0 ? extraUrls : null;
+      return [];
     }
 
-    const styleUrlsExpr = component.get('styleUrls')!;
-    const styleUrls = this.evaluator.evaluate(styleUrlsExpr);
-    if (!Array.isArray(styleUrls) || !styleUrls.every(url => typeof url === 'string')) {
-      throw createValueHasWrongTypeError(
-          styleUrlsExpr, styleUrls, 'styleUrls must be an array of strings');
+    return this._extractStyleUrlsFromExpression(component.get('styleUrls')!);
+  }
+
+  private _extractStyleUrlsFromExpression(styleUrlsExpr: ts.Expression): StyleUrlMeta[] {
+    const styleUrls: StyleUrlMeta[] = [];
+
+    if (ts.isArrayLiteralExpression(styleUrlsExpr)) {
+      for (const styleUrlExpr of styleUrlsExpr.elements) {
+        if (ts.isSpreadElement(styleUrlExpr)) {
+          styleUrls.push(...this._extractStyleUrlsFromExpression(styleUrlExpr.expression));
+        } else {
+          const styleUrl = this.evaluator.evaluate(styleUrlExpr);
+
+          if (typeof styleUrl !== 'string') {
+            throw createValueHasWrongTypeError(styleUrlExpr, styleUrl, 'styleUrl must be a string');
+          }
+
+          styleUrls.push({
+            url: styleUrl,
+            source: ResourceTypeForDiagnostics.StylesheetFromDecorator,
+            nodeForError: styleUrlExpr,
+          });
+        }
+      }
+    } else {
+      const evaluatedStyleUrls = this.evaluator.evaluate(styleUrlsExpr);
+      if (!isStringArray(evaluatedStyleUrls)) {
+        throw createValueHasWrongTypeError(
+            styleUrlsExpr, evaluatedStyleUrls, 'styleUrls must be an array of strings');
+      }
+
+      for (const styleUrl of evaluatedStyleUrls) {
+        styleUrls.push({
+          url: styleUrl,
+          source: ResourceTypeForDiagnostics.StylesheetFromDecorator,
+          nodeForError: styleUrlsExpr,
+        });
+      }
     }
-    styleUrls.push(...extraUrls);
-    return styleUrls as string[];
+
+    return styleUrls;
   }
 
   private _extractStyleResources(component: Map<string, ts.Expression>, containingFile: string):
@@ -699,7 +953,9 @@ export class ComponentDecoratorHandler implements
     const styleUrlsExpr = component.get('styleUrls');
     if (styleUrlsExpr !== undefined && ts.isArrayLiteralExpression(styleUrlsExpr)) {
       for (const expression of stringLiteralElements(styleUrlsExpr)) {
-        const resourceUrl = this.resourceLoader.resolve(expression.text, containingFile);
+        const resourceUrl = this._resolveResourceOrThrow(
+            expression.text, containingFile, expression,
+            ResourceTypeForDiagnostics.StylesheetFromDecorator);
         styles.add({path: absoluteFrom(resourceUrl), expression});
       }
     }
@@ -716,7 +972,7 @@ export class ComponentDecoratorHandler implements
 
   private _preloadAndParseTemplate(
       node: ClassDeclaration, decorator: Decorator, component: Map<string, ts.Expression>,
-      containingFile: string): Promise<ParsedTemplate|null> {
+      containingFile: string): Promise<ParsedTemplateWithSource|null> {
     if (component.has('templateUrl')) {
       // Extract the templateUrl and preload it.
       const templateUrlExpr = component.get('templateUrl')!;
@@ -725,15 +981,16 @@ export class ComponentDecoratorHandler implements
         throw createValueHasWrongTypeError(
             templateUrlExpr, templateUrl, 'templateUrl must be a string');
       }
-      const resourceUrl = this.resourceLoader.resolve(templateUrl, containingFile);
+      const resourceUrl = this._resolveResourceOrThrow(
+          templateUrl, containingFile, templateUrlExpr, ResourceTypeForDiagnostics.Template);
       const templatePromise = this.resourceLoader.preload(resourceUrl);
 
       // If the preload worked, then actually load and parse the template, and wait for any style
       // URLs to resolve.
       if (templatePromise !== undefined) {
         return templatePromise.then(() => {
-          const template =
-              this._extractExternalTemplate(node, component, templateUrlExpr, resourceUrl);
+          const templateDecl = this.parseTemplateDeclaration(decorator, component, containingFile);
+          const template = this.extractTemplate(node, templateDecl);
           this.preanalyzeTemplateCache.set(node, template);
           return template;
         });
@@ -741,92 +998,139 @@ export class ComponentDecoratorHandler implements
         return Promise.resolve(null);
       }
     } else {
-      const template = this._extractInlineTemplate(node, decorator, component, containingFile);
+      const templateDecl = this.parseTemplateDeclaration(decorator, component, containingFile);
+      const template = this.extractTemplate(node, templateDecl);
       this.preanalyzeTemplateCache.set(node, template);
       return Promise.resolve(template);
     }
   }
 
-  private _extractExternalTemplate(
-      node: ClassDeclaration, component: Map<string, ts.Expression>, templateUrlExpr: ts.Expression,
-      resourceUrl: string): ParsedTemplateWithSource {
-    const templateStr = this.resourceLoader.load(resourceUrl);
-    if (this.depTracker !== null) {
-      this.depTracker.addResourceDependency(node.getSourceFile(), absoluteFrom(resourceUrl));
-    }
+  private extractTemplate(node: ClassDeclaration, template: TemplateDeclaration):
+      ParsedTemplateWithSource {
+    if (template.isInline) {
+      let templateStr: string;
+      let templateLiteral: ts.Node|null = null;
+      let templateUrl: string = '';
+      let templateRange: LexerRange|null = null;
+      let sourceMapping: TemplateSourceMapping;
+      let escapedString = false;
+      // We only support SourceMaps for inline templates that are simple string literals.
+      if (ts.isStringLiteral(template.expression) ||
+          ts.isNoSubstitutionTemplateLiteral(template.expression)) {
+        // the start and end of the `templateExpr` node includes the quotation marks, which we must
+        // strip
+        templateRange = getTemplateRange(template.expression);
+        templateStr = template.expression.getSourceFile().text;
+        templateLiteral = template.expression;
+        templateUrl = template.templateUrl;
+        escapedString = true;
+        sourceMapping = {
+          type: 'direct',
+          node: template.expression,
+        };
+      } else {
+        const resolvedTemplate = this.evaluator.evaluate(template.expression);
+        if (typeof resolvedTemplate !== 'string') {
+          throw createValueHasWrongTypeError(
+              template.expression, resolvedTemplate, 'template must be a string');
+        }
+        templateStr = resolvedTemplate;
+        sourceMapping = {
+          type: 'indirect',
+          node: template.expression,
+          componentClass: node,
+          template: templateStr,
+        };
+      }
 
-    const template = this._parseTemplate(
-        component, templateStr, /* templateLiteral */ null, sourceMapUrl(resourceUrl),
-        /* templateRange */ undefined,
-        /* escapedString */ false);
-
-    return {
-      ...template,
-      sourceMapping: {
-        type: 'external',
-        componentClass: node,
-        node: templateUrlExpr,
-        template: templateStr,
-        templateUrl: resourceUrl,
-      },
-    };
-  }
-
-  private _extractInlineTemplate(
-      node: ClassDeclaration, decorator: Decorator, component: Map<string, ts.Expression>,
-      containingFile: string): ParsedTemplateWithSource {
-    if (!component.has('template')) {
-      throw new FatalDiagnosticError(
-          ErrorCode.COMPONENT_MISSING_TEMPLATE, Decorator.nodeForError(decorator),
-          'component is missing a template');
-    }
-    const templateExpr = component.get('template')!;
-
-    let templateStr: string;
-    let templateLiteral: ts.Node|null = null;
-    let templateUrl: string = '';
-    let templateRange: LexerRange|undefined = undefined;
-    let sourceMapping: TemplateSourceMapping;
-    let escapedString = false;
-    // We only support SourceMaps for inline templates that are simple string literals.
-    if (ts.isStringLiteral(templateExpr) || ts.isNoSubstitutionTemplateLiteral(templateExpr)) {
-      // the start and end of the `templateExpr` node includes the quotation marks, which we
-      // must
-      // strip
-      templateRange = getTemplateRange(templateExpr);
-      templateStr = templateExpr.getSourceFile().text;
-      templateLiteral = templateExpr;
-      templateUrl = containingFile;
-      escapedString = true;
-      sourceMapping = {
-        type: 'direct',
-        node: templateExpr as (ts.StringLiteral | ts.NoSubstitutionTemplateLiteral),
+      return {
+        ...this._parseTemplate(template, templateStr, templateRange, escapedString),
+        sourceMapping,
+        declaration: template,
       };
     } else {
-      const resolvedTemplate = this.evaluator.evaluate(templateExpr);
-      if (typeof resolvedTemplate !== 'string') {
-        throw createValueHasWrongTypeError(
-            templateExpr, resolvedTemplate, 'template must be a string');
+      const templateStr = this.resourceLoader.load(template.resolvedTemplateUrl);
+      if (this.depTracker !== null) {
+        this.depTracker.addResourceDependency(
+            node.getSourceFile(), absoluteFrom(template.resolvedTemplateUrl));
       }
-      templateStr = resolvedTemplate;
-      sourceMapping = {
-        type: 'indirect',
-        node: templateExpr,
-        componentClass: node,
-        template: templateStr,
+
+      return {
+        ...this._parseTemplate(
+            template, templateStr, /* templateRange */ null,
+            /* escapedString */ false),
+        sourceMapping: {
+          type: 'external',
+          componentClass: node,
+          // TODO(alxhub): TS in g3 is unable to make this inference on its own, so cast it here
+          // until g3 is able to figure this out.
+          node: (template as ExternalTemplateDeclaration).templateUrlExpression,
+          template: templateStr,
+          templateUrl: template.resolvedTemplateUrl,
+        },
+        declaration: template,
       };
     }
-
-    const template = this._parseTemplate(
-        component, templateStr, templateLiteral, templateUrl, templateRange, escapedString);
-
-    return {...template, sourceMapping};
   }
 
   private _parseTemplate(
-      component: Map<string, ts.Expression>, templateStr: string, templateLiteral: ts.Node|null,
-      templateUrl: string, templateRange: LexerRange|undefined,
+      template: TemplateDeclaration, templateStr: string, templateRange: LexerRange|null,
       escapedString: boolean): ParsedComponentTemplate {
+    // We always normalize line endings if the template has been escaped (i.e. is inline).
+    const i18nNormalizeLineEndingsInICUs = escapedString || this.i18nNormalizeLineEndingsInICUs;
+
+    const parsedTemplate = parseTemplate(templateStr, template.sourceMapUrl, {
+      preserveWhitespaces: template.preserveWhitespaces,
+      interpolationConfig: template.interpolationConfig,
+      range: templateRange ?? undefined,
+      escapedString,
+      enableI18nLegacyMessageIdFormat: this.enableI18nLegacyMessageIdFormat,
+      i18nNormalizeLineEndingsInICUs,
+      isInline: template.isInline,
+      alwaysAttemptHtmlToR3AstConversion: this.usePoisonedData,
+    });
+
+    // Unfortunately, the primary parse of the template above may not contain accurate source map
+    // information. If used directly, it would result in incorrect code locations in template
+    // errors, etc. There are three main problems:
+    //
+    // 1. `preserveWhitespaces: false` annihilates the correctness of template source mapping, as
+    //    the whitespace transformation changes the contents of HTML text nodes before they're
+    //    parsed into Angular expressions.
+    // 2. `preserveLineEndings: false` causes growing misalignments in templates that use '\r\n'
+    //    line endings, by normalizing them to '\n'.
+    // 3. By default, the template parser strips leading trivia characters (like spaces, tabs, and
+    //    newlines). This also destroys source mapping information.
+    //
+    // In order to guarantee the correctness of diagnostics, templates are parsed a second time
+    // with the above options set to preserve source mappings.
+
+    const {nodes: diagNodes} = parseTemplate(templateStr, template.sourceMapUrl, {
+      preserveWhitespaces: true,
+      preserveLineEndings: true,
+      interpolationConfig: template.interpolationConfig,
+      range: templateRange ?? undefined,
+      escapedString,
+      enableI18nLegacyMessageIdFormat: this.enableI18nLegacyMessageIdFormat,
+      i18nNormalizeLineEndingsInICUs,
+      leadingTriviaChars: [],
+      isInline: template.isInline,
+      alwaysAttemptHtmlToR3AstConversion: this.usePoisonedData,
+    });
+
+    return {
+      ...parsedTemplate,
+      diagNodes,
+      template: template.isInline ? new WrappedNodeExpr(template.expression) : templateStr,
+      templateUrl: template.resolvedTemplateUrl,
+      isInline: template.isInline,
+      file: new ParseSourceFile(templateStr, template.resolvedTemplateUrl),
+    };
+  }
+
+  private parseTemplateDeclaration(
+      decorator: Decorator, component: Map<string, ts.Expression>,
+      containingFile: string): TemplateDeclaration {
     let preserveWhitespaces: boolean = this.defaultPreserveWhitespaces;
     if (component.has('preserveWhitespaces')) {
       const expr = component.get('preserveWhitespaces')!;
@@ -849,52 +1153,40 @@ export class ComponentDecoratorHandler implements
       interpolationConfig = InterpolationConfig.fromArray(value as [string, string]);
     }
 
-    // We always normalize line endings if the template has been escaped (i.e. is inline).
-    const i18nNormalizeLineEndingsInICUs = escapedString || this.i18nNormalizeLineEndingsInICUs;
+    if (component.has('templateUrl')) {
+      const templateUrlExpr = component.get('templateUrl')!;
+      const templateUrl = this.evaluator.evaluate(templateUrlExpr);
+      if (typeof templateUrl !== 'string') {
+        throw createValueHasWrongTypeError(
+            templateUrlExpr, templateUrl, 'templateUrl must be a string');
+      }
+      const resourceUrl = this._resolveResourceOrThrow(
+          templateUrl, containingFile, templateUrlExpr, ResourceTypeForDiagnostics.Template);
 
-    const isInline = component.has('template');
-    const parsedTemplate = parseTemplate(templateStr, templateUrl, {
-      preserveWhitespaces,
-      interpolationConfig,
-      range: templateRange,
-      escapedString,
-      enableI18nLegacyMessageIdFormat: this.enableI18nLegacyMessageIdFormat,
-      i18nNormalizeLineEndingsInICUs,
-      isInline,
-    });
-
-    // Unfortunately, the primary parse of the template above may not contain accurate source map
-    // information. If used directly, it would result in incorrect code locations in template
-    // errors, etc. There are two main problems:
-    //
-    // 1. `preserveWhitespaces: false` annihilates the correctness of template source mapping, as
-    //    the whitespace transformation changes the contents of HTML text nodes before they're
-    //    parsed into Angular expressions.
-    // 2. By default, the template parser strips leading trivia characters (like spaces, tabs, and
-    //    newlines). This also destroys source mapping information.
-    //
-    // In order to guarantee the correctness of diagnostics, templates are parsed a second time
-    // with the above options set to preserve source mappings.
-
-    const {nodes: diagNodes} = parseTemplate(templateStr, templateUrl, {
-      preserveWhitespaces: true,
-      interpolationConfig,
-      range: templateRange,
-      escapedString,
-      enableI18nLegacyMessageIdFormat: this.enableI18nLegacyMessageIdFormat,
-      i18nNormalizeLineEndingsInICUs,
-      leadingTriviaChars: [],
-      isInline,
-    });
-
-    return {
-      ...parsedTemplate,
-      diagNodes,
-      template: templateLiteral !== null ? new WrappedNodeExpr(templateLiteral) : templateStr,
-      templateUrl,
-      isInline,
-      file: new ParseSourceFile(templateStr, templateUrl),
-    };
+      return {
+        isInline: false,
+        interpolationConfig,
+        preserveWhitespaces,
+        templateUrl,
+        templateUrlExpression: templateUrlExpr,
+        resolvedTemplateUrl: resourceUrl,
+        sourceMapUrl: sourceMapUrl(resourceUrl),
+      };
+    } else if (component.has('template')) {
+      return {
+        isInline: true,
+        interpolationConfig,
+        preserveWhitespaces,
+        expression: component.get('template')!,
+        templateUrl: containingFile,
+        resolvedTemplateUrl: containingFile,
+        sourceMapUrl: containingFile,
+      };
+    } else {
+      throw new FatalDiagnosticError(
+          ErrorCode.COMPONENT_MISSING_TEMPLATE, Decorator.nodeForError(decorator),
+          'component is missing a template');
+    }
   }
 
   private _expressionToImportedFile(expr: Expression, origin: ts.SourceFile): ts.SourceFile|null {
@@ -906,14 +1198,20 @@ export class ComponentDecoratorHandler implements
     return this.moduleResolver.resolveModule(expr.value.moduleName!, origin.fileName);
   }
 
-  private _isCyclicImport(expr: Expression, origin: ts.SourceFile): boolean {
-    const imported = this._expressionToImportedFile(expr, origin);
-    if (imported === null) {
-      return false;
+  /**
+   * Check whether adding an import from `origin` to the source-file corresponding to `expr` would
+   * create a cyclic import.
+   *
+   * @returns a `Cycle` object if a cycle would be created, otherwise `null`.
+   */
+  private _checkForCyclicImport(ref: Reference, expr: Expression, origin: ts.SourceFile): Cycle
+      |null {
+    const importedFile = this._expressionToImportedFile(expr, origin);
+    if (importedFile === null) {
+      return null;
     }
-
     // Check whether the import is legal.
-    return this.cycleAnalyzer.wouldCreateCycle(origin, imported);
+    return this.cycleAnalyzer.wouldCreateCycle(origin, importedFile);
   }
 
   private _recordSyntheticImport(expr: Expression, origin: ts.SourceFile): void {
@@ -923,6 +1221,45 @@ export class ComponentDecoratorHandler implements
     }
 
     this.cycleAnalyzer.recordSyntheticImport(origin, imported);
+  }
+
+  /**
+   * Resolve the url of a resource relative to the file that contains the reference to it.
+   *
+   * Throws a FatalDiagnosticError when unable to resolve the file.
+   */
+  private _resolveResourceOrThrow(
+      file: string, basePath: string, nodeForError: ts.Node,
+      resourceType: ResourceTypeForDiagnostics): string {
+    try {
+      return this.resourceLoader.resolve(file, basePath);
+    } catch (e) {
+      let errorText: string;
+      switch (resourceType) {
+        case ResourceTypeForDiagnostics.Template:
+          errorText = `Could not find template file '${file}'.`;
+          break;
+        case ResourceTypeForDiagnostics.StylesheetFromTemplate:
+          errorText = `Could not find stylesheet file '${file}' linked from the template.`;
+          break;
+        case ResourceTypeForDiagnostics.StylesheetFromDecorator:
+          errorText = `Could not find stylesheet file '${file}'.`;
+          break;
+      }
+
+      throw new FatalDiagnosticError(
+          ErrorCode.COMPONENT_RESOURCE_NOT_FOUND, nodeForError, errorText);
+    }
+  }
+
+  private _extractTemplateStyleUrls(template: ParsedTemplateWithSource): StyleUrlMeta[] {
+    if (template.styleUrls === null) {
+      return [];
+    }
+
+    const nodeForError = getTemplateDeclarationNodeForError(template.declaration);
+    return template.styleUrls.map(
+        url => ({url, source: ResourceTypeForDiagnostics.StylesheetFromTemplate, nodeForError}));
   }
 }
 
@@ -949,6 +1286,23 @@ function sourceMapUrl(resourceUrl: string): string {
   }
 }
 
+/** Determines if the result of an evaluation is a string array. */
+function isStringArray(resolvedValue: ResolvedValue): resolvedValue is string[] {
+  return Array.isArray(resolvedValue) && resolvedValue.every(elem => typeof elem === 'string');
+}
+
+/** Determines the node to use for debugging purposes for the given TemplateDeclaration. */
+function getTemplateDeclarationNodeForError(declaration: TemplateDeclaration): ts.Node {
+  // TODO(zarend): Change this to if/else when that is compatible with g3. This uses a switch
+  // because if/else fails to compile on g3. That is because g3 compiles this in non-strict mode
+  // where type inference does not work correctly.
+  switch (declaration.isInline) {
+    case true:
+      return declaration.expression;
+    case false:
+      return declaration.templateUrlExpression;
+  }
+}
 
 /**
  * Information about the template which was extracted during parsing.
@@ -978,4 +1332,54 @@ export interface ParsedComponentTemplate extends ParsedTemplate {
 
 export interface ParsedTemplateWithSource extends ParsedComponentTemplate {
   sourceMapping: TemplateSourceMapping;
+  declaration: TemplateDeclaration;
+}
+
+/**
+ * Common fields extracted from the declaration of a template.
+ */
+interface CommonTemplateDeclaration {
+  preserveWhitespaces: boolean;
+  interpolationConfig: InterpolationConfig;
+  templateUrl: string;
+  resolvedTemplateUrl: string;
+  sourceMapUrl: string;
+}
+
+/**
+ * Information extracted from the declaration of an inline template.
+ */
+interface InlineTemplateDeclaration extends CommonTemplateDeclaration {
+  isInline: true;
+  expression: ts.Expression;
+}
+
+/**
+ * Information extracted from the declaration of an external template.
+ */
+interface ExternalTemplateDeclaration extends CommonTemplateDeclaration {
+  isInline: false;
+  templateUrlExpression: ts.Expression;
+}
+
+/**
+ * The declaration of a template extracted from a component decorator.
+ *
+ * This data is extracted and stored separately to faciliate re-interpreting the template
+ * declaration whenever the compiler is notified of a change to a template file. With this
+ * information, `ComponentDecoratorHandler` is able to re-read the template and update the component
+ * record without needing to parse the original decorator again.
+ */
+type TemplateDeclaration = InlineTemplateDeclaration|ExternalTemplateDeclaration;
+
+/**
+ * Generate a diagnostic related information object that describes a potential cyclic import path.
+ */
+function makeCyclicImportInfo(
+    ref: Reference, type: string, cycle: Cycle): ts.DiagnosticRelatedInformation {
+  const name = ref.debugName || '(unknown)';
+  const path = cycle.getPath().map(sf => sf.fileName).join(' -> ');
+  const message =
+      `The ${type} '${name}' is used in the template but importing it would create a cycle: `;
+  return makeRelatedInformation(ref.node, message + path);
 }

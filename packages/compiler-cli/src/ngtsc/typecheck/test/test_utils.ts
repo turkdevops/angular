@@ -97,7 +97,8 @@ export function angularCoreDts(): TestFile {
     }
 
     export declare class EventEmitter<T> {
-      subscribe(generatorOrNext?: any, error?: any, complete?: any): unknown;
+      subscribe(next?: (value: T) => void, error?: (error: any) => void, complete?: () => void): unknown;
+      subscribe(observerOrNext?: any, error?: any, complete?: any): unknown;
     }
 
     export declare type NgIterable<T> = Array<T> | Iterable<T>;
@@ -590,10 +591,6 @@ class FakeEnvironment /* implements Environment */ {
 
   pipeInst(ref: Reference<ClassDeclaration<ts.ClassDeclaration>>): ts.Expression {
     return ts.createParen(ts.createAsExpression(ts.createNull(), this.referenceType(ref)));
-  }
-
-  declareOutputHelper(): ts.Expression {
-    return ts.createIdentifier('_outputHelper');
   }
 
   reference(ref: Reference<ClassDeclaration<ts.ClassDeclaration>>): ts.Expression {

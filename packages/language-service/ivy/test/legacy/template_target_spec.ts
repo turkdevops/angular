@@ -27,12 +27,31 @@ function parse(template: string): ParseResult {
   template = template.replace('¦', '');
   const templateUrl = '/foo';
   return {
-    ...parseTemplate(template, templateUrl),
+    ...parseTemplate(template, templateUrl, {
+      // Set `leadingTriviaChars` and `preserveWhitespaces` such that whitespace is not stripped
+      // and fully accounted for in source spans. Without these flags the source spans can be
+      // inaccurate.
+      // Note: template parse options should be aligned with the `diagNodes` in
+      // `ComponentDecoratorHandler._parseTemplate`.
+      leadingTriviaChars: [],
+      preserveWhitespaces: true,
+      alwaysAttemptHtmlToR3AstConversion: true,
+    }),
     position,
   };
 }
 
 describe('getTargetAtPosition for template AST', () => {
+  it('should locate incomplete tag', () => {
+    const {errors, nodes, position} = parse(`<div¦`);
+    expect(errors?.length).toBe(1);
+    expect(errors![0].msg).toContain('Opening tag "div" not terminated.');
+    const {context} = getTargetAtPosition(nodes, position)!;
+    const {node} = context as SingleNodeTarget;
+    expect(isTemplateNode(node!)).toBe(true);
+    expect(node).toBeInstanceOf(t.Element);
+  });
+
   it('should locate element in opening tag', () => {
     const {errors, nodes, position} = parse(`<di¦v></div>`);
     expect(errors).toBe(null);
@@ -497,8 +516,7 @@ describe('getTargetAtPosition for expression AST', () => {
     const {context} = getTargetAtPosition(nodes, position)!;
     const {node} = context as SingleNodeTarget;
     expect(isExpressionNode(node!)).toBe(true);
-    // TODO: We want this to be a BindingPipe.
-    expect(node).toBeInstanceOf(e.Interpolation);
+    expect(node).toBeInstanceOf(e.BindingPipe);
   });
 
   it('should locate binding pipe without identifier',

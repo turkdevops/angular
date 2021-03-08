@@ -145,7 +145,6 @@ export {
   ɵɵenableBindings,
   ɵɵFactoryDef,
   ɵɵgetCurrentView,
-  ɵɵgetFactoryOf,
   ɵɵgetInheritedFactory,
   ɵɵhostProperty,
   ɵɵi18n,
@@ -273,6 +272,7 @@ export {
 export {
   ɵɵngDeclareComponent,
   ɵɵngDeclareDirective,
+  ɵɵngDeclarePipe,
 } from './render3/jit/partial';
 export {
   compilePipe as ɵcompilePipe,

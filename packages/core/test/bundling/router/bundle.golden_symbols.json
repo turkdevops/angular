@@ -237,9 +237,6 @@
     "name": "EMPTY_ARRAY"
   },
   {
-    "name": "EMPTY_ARRAY"
-  },
-  {
     "name": "EMPTY_OBJ"
   },
   {
@@ -1200,6 +1197,9 @@
     "name": "equalPath"
   },
   {
+    "name": "exactMatchOptions"
+  },
+  {
     "name": "executeCheckHooks"
   },
   {
@@ -1404,6 +1404,9 @@
     "name": "getPreviousIndex"
   },
   {
+    "name": "getProjectionNodes"
+  },
+  {
     "name": "getPromiseCtor"
   },
   {
@@ -1578,6 +1581,9 @@
     "name": "isObject"
   },
   {
+    "name": "isObservable"
+  },
+  {
     "name": "isPositive"
   },
   {
@@ -1654,6 +1660,9 @@
   },
   {
     "name": "materializeViewResults"
+  },
+  {
+    "name": "matrixParamsMatch"
   },
   {
     "name": "maybeUnwrapFn"
@@ -1747,6 +1756,12 @@
   },
   {
     "name": "optionsReducer"
+  },
+  {
+    "name": "paramCompareMap"
+  },
+  {
+    "name": "pathCompareMap"
   },
   {
     "name": "pipeFromArray"
@@ -1942,6 +1957,9 @@
   },
   {
     "name": "subscribeToResult"
+  },
+  {
+    "name": "subsetMatchOptions"
   },
   {
     "name": "supportsState"

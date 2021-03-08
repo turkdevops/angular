@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {AST, BindingPipe, EmptyExpr, ImplicitReceiver, LiteralPrimitive, MethodCall, ParseSourceSpan, PropertyRead, PropertyWrite, SafeMethodCall, SafePropertyRead, TmplAstBoundAttribute, TmplAstBoundEvent, TmplAstElement, TmplAstNode, TmplAstReference, TmplAstTemplate, TmplAstTextAttribute, TmplAstVariable} from '@angular/compiler';
+import {AST, BindingPipe, EmptyExpr, ImplicitReceiver, LiteralPrimitive, MethodCall, ParseSourceSpan, PropertyRead, PropertyWrite, SafeMethodCall, SafePropertyRead, TmplAstBoundAttribute, TmplAstBoundEvent, TmplAstElement, TmplAstNode, TmplAstReference, TmplAstTemplate, TmplAstText, TmplAstTextAttribute, TmplAstVariable} from '@angular/compiler';
 import {NgCompiler} from '@angular/compiler-cli/src/ngtsc/core';
 import {CompletionKind, DirectiveInScope, TemplateDeclarationSymbol} from '@angular/compiler-cli/src/ngtsc/typecheck/api';
 import {BoundEvent} from '@angular/compiler/src/render3/r3_ast';
@@ -14,6 +14,7 @@ import * as ts from 'typescript';
 
 import {addAttributeCompletionEntries, AttributeCompletionKind, buildAttributeCompletionTable, getAttributeCompletionSymbol} from './attribute_completions';
 import {DisplayInfo, DisplayInfoKind, getDirectiveDisplayInfo, getSymbolDisplayInfo, getTsSymbolDisplayInfo, unsafeCastDisplayInfoKindToScriptElementKind} from './display_parts';
+import {TargetContext, TargetNodeKind, TemplateTarget} from './template_target';
 import {filterAliasImports} from './utils';
 
 type PropertyExpressionCompletionBuilder =
@@ -48,13 +49,15 @@ export enum CompletionNodeContext {
 export class CompletionBuilder<N extends TmplAstNode|AST> {
   private readonly typeChecker = this.compiler.getNextProgram().getTypeChecker();
   private readonly templateTypeChecker = this.compiler.getTemplateTypeChecker();
+  private readonly nodeParent = this.targetDetails.parent;
+  private readonly nodeContext = nodeContextFromTarget(this.targetDetails.context);
+  private readonly template = this.targetDetails.template;
+  private readonly position = this.targetDetails.position;
 
   constructor(
       private readonly tsLS: ts.LanguageService, private readonly compiler: NgCompiler,
       private readonly component: ts.ClassDeclaration, private readonly node: N,
-      private readonly nodeContext: CompletionNodeContext,
-      private readonly nodeParent: TmplAstNode|AST|null,
-      private readonly template: TmplAstTemplate|null) {}
+      private readonly targetDetails: TemplateTarget, private readonly inlineTemplate: boolean) {}
 
   /**
    * Analogue for `ts.LanguageService.getCompletionsAtPosition`.
@@ -220,12 +223,7 @@ export class CompletionBuilder<N extends TmplAstNode|AST> {
 
     const {componentContext, templateContext} = completions;
 
-    let replacementSpan: ts.TextSpan|undefined = undefined;
-    // Non-empty nodes get replaced with the completion.
-    if (!(this.node instanceof EmptyExpr || this.node instanceof LiteralPrimitive ||
-          this.node instanceof BoundEvent)) {
-      replacementSpan = makeReplacementSpanFromAst(this.node);
-    }
+    const replacementSpan = makeReplacementSpanFromAst(this.node);
 
     // Merge TS completion results with results from the template scope.
     let entries: ts.CompletionEntry[] = [];
@@ -340,29 +338,50 @@ export class CompletionBuilder<N extends TmplAstNode|AST> {
     }
   }
 
-  private isElementTagCompletion(): this is CompletionBuilder<TmplAstElement> {
-    return this.node instanceof TmplAstElement &&
-        this.nodeContext === CompletionNodeContext.ElementTag;
+  private isElementTagCompletion(): this is CompletionBuilder<TmplAstElement|TmplAstText> {
+    if (this.node instanceof TmplAstText) {
+      const positionInTextNode = this.position - this.node.sourceSpan.start.offset;
+      // We only provide element completions in a text node when there is an open tag immediately to
+      // the left of the position.
+      return this.node.value.substring(0, positionInTextNode).endsWith('<');
+    } else if (this.node instanceof TmplAstElement) {
+      return this.nodeContext === CompletionNodeContext.ElementTag;
+    }
+    return false;
   }
 
-  private getElementTagCompletion(this: CompletionBuilder<TmplAstElement>):
+  private getElementTagCompletion(this: CompletionBuilder<TmplAstElement|TmplAstText>):
       ts.WithMetadata<ts.CompletionInfo>|undefined {
     const templateTypeChecker = this.compiler.getTemplateTypeChecker();
 
-    // The replacementSpan is the tag name.
-    const replacementSpan: ts.TextSpan = {
-      start: this.node.sourceSpan.start.offset + 1,  // account for leading '<'
-      length: this.node.name.length,
-    };
+    let start: number;
+    let length: number;
+    if (this.node instanceof TmplAstElement) {
+      // The replacementSpan is the tag name.
+      start = this.node.sourceSpan.start.offset + 1;  // account for leading '<'
+      length = this.node.name.length;
+    } else {
+      const positionInTextNode = this.position - this.node.sourceSpan.start.offset;
+      const textToLeftOfPosition = this.node.value.substring(0, positionInTextNode);
+      start = this.node.sourceSpan.start.offset + textToLeftOfPosition.lastIndexOf('<') + 1;
+      // We only autocomplete immediately after the < so we don't replace any existing text
+      length = 0;
+    }
 
-    const entries: ts.CompletionEntry[] =
-        Array.from(templateTypeChecker.getPotentialElementTags(this.component))
-            .map(([tag, directive]) => ({
-                   kind: tagCompletionKind(directive),
-                   name: tag,
-                   sortText: tag,
-                   replacementSpan,
-                 }));
+    const replacementSpan: ts.TextSpan = {start, length};
+
+    let potentialTags = Array.from(templateTypeChecker.getPotentialElementTags(this.component));
+    if (!this.inlineTemplate) {
+      // If we are in an external template, don't provide non-Angular tags (directive === null)
+      // because we expect other extensions (i.e. Emmet) to provide those for HTML files.
+      potentialTags = potentialTags.filter(([_, directive]) => directive !== null);
+    }
+    const entries: ts.CompletionEntry[] = potentialTags.map(([tag, directive]) => ({
+                                                              kind: tagCompletionKind(directive),
+                                                              name: tag,
+                                                              sortText: tag,
+                                                              replacementSpan,
+                                                            }));
 
     return {
       entries,
@@ -373,8 +392,8 @@ export class CompletionBuilder<N extends TmplAstNode|AST> {
   }
 
   private getElementTagCompletionDetails(
-      this: CompletionBuilder<TmplAstElement>, entryName: string): ts.CompletionEntryDetails
-      |undefined {
+      this: CompletionBuilder<TmplAstElement|TmplAstText>,
+      entryName: string): ts.CompletionEntryDetails|undefined {
     const templateTypeChecker = this.compiler.getTemplateTypeChecker();
 
     const tagMap = templateTypeChecker.getPotentialElementTags(this.component);
@@ -402,8 +421,8 @@ export class CompletionBuilder<N extends TmplAstNode|AST> {
     };
   }
 
-  private getElementTagCompletionSymbol(this: CompletionBuilder<TmplAstElement>, entryName: string):
-      ts.Symbol|undefined {
+  private getElementTagCompletionSymbol(
+      this: CompletionBuilder<TmplAstElement|TmplAstText>, entryName: string): ts.Symbol|undefined {
     const templateTypeChecker = this.compiler.getTemplateTypeChecker();
 
     const tagMap = templateTypeChecker.getPotentialElementTags(this.component);
@@ -443,7 +462,7 @@ export class CompletionBuilder<N extends TmplAstNode|AST> {
     }
 
     const attrTable = buildAttributeCompletionTable(
-        this.component, element, this.compiler.getTemplateTypeChecker());
+        this.component, element, this.compiler.getTemplateTypeChecker(), this.inlineTemplate);
 
     let entries: ts.CompletionEntry[] = [];
 
@@ -517,7 +536,7 @@ export class CompletionBuilder<N extends TmplAstNode|AST> {
     }
 
     const attrTable = buildAttributeCompletionTable(
-        this.component, element, this.compiler.getTemplateTypeChecker());
+        this.component, element, this.compiler.getTemplateTypeChecker(), this.inlineTemplate);
 
     if (!attrTable.has(name)) {
       return undefined;
@@ -584,7 +603,7 @@ export class CompletionBuilder<N extends TmplAstNode|AST> {
     }
 
     const attrTable = buildAttributeCompletionTable(
-        this.component, element, this.compiler.getTemplateTypeChecker());
+        this.component, element, this.compiler.getTemplateTypeChecker(), this.inlineTemplate);
 
     if (!attrTable.has(name)) {
       return undefined;
@@ -631,7 +650,14 @@ function makeReplacementSpanFromParseSourceSpan(span: ParseSourceSpan): ts.TextS
 }
 
 function makeReplacementSpanFromAst(node: PropertyRead|PropertyWrite|MethodCall|SafePropertyRead|
-                                    SafeMethodCall|BindingPipe): ts.TextSpan {
+                                    SafeMethodCall|BindingPipe|EmptyExpr|LiteralPrimitive|
+                                    BoundEvent): ts.TextSpan|undefined {
+  if ((node instanceof EmptyExpr || node instanceof LiteralPrimitive ||
+       node instanceof BoundEvent)) {
+    // empty nodes do not replace any existing text
+    return undefined;
+  }
+
   return {
     start: node.nameSpan.start,
     length: node.nameSpan.end - node.nameSpan.start,
@@ -660,5 +686,28 @@ function stripBindingSugar(binding: string): {name: string, kind: DisplayInfoKin
     return {name, kind: DisplayInfoKind.EVENT};
   } else {
     return {name, kind: DisplayInfoKind.ATTRIBUTE};
+  }
+}
+
+function nodeContextFromTarget(target: TargetContext): CompletionNodeContext {
+  switch (target.kind) {
+    case TargetNodeKind.ElementInTagContext:
+      return CompletionNodeContext.ElementTag;
+    case TargetNodeKind.ElementInBodyContext:
+      // Completions in element bodies are for new attributes.
+      return CompletionNodeContext.ElementAttributeKey;
+    case TargetNodeKind.TwoWayBindingContext:
+      return CompletionNodeContext.TwoWayBinding;
+    case TargetNodeKind.AttributeInKeyContext:
+      return CompletionNodeContext.ElementAttributeKey;
+    case TargetNodeKind.AttributeInValueContext:
+      if (target.node instanceof TmplAstBoundEvent) {
+        return CompletionNodeContext.EventValue;
+      } else {
+        return CompletionNodeContext.None;
+      }
+    default:
+      // No special context is available.
+      return CompletionNodeContext.None;
   }
 }

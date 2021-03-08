@@ -393,6 +393,31 @@ runInEachFileSystem(os => {
     // that start with `C:`.
     if (os !== 'Windows' || platform() === 'win32') {
       describe('when closure annotations are requested', () => {
+        it('should add @pureOrBreakMyCode to getInheritedFactory calls', () => {
+          env.tsconfig({
+            'annotateForClosureCompiler': true,
+          });
+          env.write(`test.ts`, `
+            import {Directive} from '@angular/core';
+    
+            @Directive({
+              selector: '[base]',
+            })
+            class Base {}
+    
+            @Directive({
+              selector: '[test]',
+            })
+            class Dir extends Base {
+            }
+        `);
+
+          env.driveMain();
+
+          const jsContents = env.getContents('test.js');
+          expect(jsContents).toContain('/** @pureOrBreakMyCode */ i0.ɵɵgetInheritedFactory(Dir)');
+        });
+
         it('should add @nocollapse to static fields', () => {
           env.tsconfig({
             'annotateForClosureCompiler': true,
@@ -4774,6 +4799,53 @@ runInEachFileSystem(os => {
         const jsContents = env.getContents('test.js');
         expect(jsContents).not.toMatch(/i\d\.ɵɵsetComponentScope\([^)]*OtherComponent[^)]*\)/);
       });
+
+      it('should detect a simple cycle and fatally error if doing partial-compilation', () => {
+        env.tsconfig({
+          compilationMode: 'partial',
+        });
+
+        env.write('test.ts', `
+        import {Component, NgModule} from '@angular/core';
+        import {NormalComponent} from './cyclic';
+
+        @Component({
+          selector: 'cyclic-component',
+          template: 'Importing this causes a cycle',
+        })
+        export class CyclicComponent {}
+
+        @NgModule({
+          declarations: [NormalComponent, CyclicComponent],
+        })
+        export class Module {}
+      `);
+
+        env.write('cyclic.ts', `
+        import {Component} from '@angular/core';
+
+        @Component({
+          selector: 'normal-component',
+          template: '<cyclic-component></cyclic-component>',
+        })
+        export class NormalComponent {}
+      `);
+
+        const diagnostics = env.driveDiagnostics();
+        expect(diagnostics.length).toEqual(1);
+        const error = diagnostics[0];
+        expect(error.code).toBe(ngErrorCode(ErrorCode.IMPORT_CYCLE_DETECTED));
+        expect(error.messageText)
+            .toEqual(
+                'One or more import cycles would need to be created to compile this component, ' +
+                'which is not supported by the current compiler configuration.');
+        const _abs = absoluteFrom;
+        expect(error.relatedInformation?.map(diag => diag.messageText)).toEqual([
+          `The component 'CyclicComponent' is used in the template ` +
+              `but importing it would create a cycle: ` +
+              `${_abs('/cyclic.ts')} -> ${_abs('/test.ts')} -> ${_abs('/cyclic.ts')}`,
+        ]);
+      });
     });
 
     describe('local refs', () => {
@@ -7718,6 +7790,71 @@ export const Foo = Foo__PRE_R3__;
         });
       });
     });
+
+    it('reports a COMPONENT_RESOURCE_NOT_FOUND for a component with a templateUrl' +
+           ' that points to a non-existent file',
+       () => {
+         env.write('test.ts', `
+                  import {Component} from '@angular/core';
+                  @Component({
+                    selector: 'test-component',
+                    templateUrl: './non-existent-file.html'
+                  })
+                  class TestComponent {}
+                `);
+
+         const diags = env.driveDiagnostics();
+
+         expect(diags.length).toEqual(1);
+         expect(diags[0].code).toEqual(ngErrorCode(ErrorCode.COMPONENT_RESOURCE_NOT_FOUND));
+         expect(diags[0].messageText)
+             .toEqual(`Could not find template file './non-existent-file.html'.`);
+       });
+
+    it(`reports a COMPONENT_RESOURCE_NOT_FOUND when style sheet link in a component's template` +
+           ` does not exist`,
+       () => {
+         env.write('test.ts', `
+                  import {Component} from '@angular/core';
+                  @Component({
+                    selector: 'test-component',
+                    templateUrl: './test.html'
+                  })
+                  class TestComponent {}
+                `);
+         env.write('test.html', `
+                  <link rel="stylesheet" href="./non-existent-file.css">
+                  `);
+
+         const diags = env.driveDiagnostics();
+
+         expect(diags.length).toEqual(1);
+         expect(diags[0].code).toEqual(ngErrorCode(ErrorCode.COMPONENT_RESOURCE_NOT_FOUND));
+         expect(diags[0].messageText)
+             .toEqual(
+                 `Could not find stylesheet file './non-existent-file.css' linked from the template.`);
+       });
+
+    it('reports a COMPONENT_RESOURCE_NOT_FOUND for a component with a style url ' +
+           'defined in a spread that points to a non-existent file',
+       () => {
+         env.write('test.ts', `
+                  import {Component} from '@angular/core';
+                  @Component({
+                    selector: 'test-component',
+                    template: '',
+                    styleUrls: [...['./non-existent-file.css']]
+                  })
+                  class TestComponent {}
+                `);
+
+         const diags = env.driveDiagnostics();
+
+         expect(diags.length).toEqual(1);
+         expect(diags[0].code).toEqual(ngErrorCode(ErrorCode.COMPONENT_RESOURCE_NOT_FOUND));
+         expect(diags[0].messageText)
+             .toEqual(`Could not find stylesheet file './non-existent-file.css'.`);
+       });
   });
 
   function expectTokenAtPosition<T extends ts.Node>(

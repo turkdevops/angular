@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {CssRule, processRules, ShadowCss} from '@angular/compiler/src/shadow_css';
+import {CssRule, processRules, repeatGroups, ShadowCss} from '@angular/compiler/src/shadow_css';
 import {normalizeCSS} from '@angular/platform-browser/testing/src/browser_util';
 
 {
@@ -145,6 +145,10 @@ import {normalizeCSS} from '@angular/platform-browser/testing/src/browser_util';
             .toEqual('ul[a-host] > .z[contenta], li[a-host] > .z[contenta] {}');
       });
 
+      it('should handle compound class selectors', () => {
+        expect(s(':host(.a.b) {}', 'contenta', 'a-host')).toEqual('.a.b[a-host] {}');
+      });
+
       it('should handle multiple class selectors', () => {
         expect(s(':host(.x,.y) {}', 'contenta', 'a-host')).toEqual('.x[a-host], .y[a-host] {}');
         expect(s(':host(.x,.y) > .z {}', 'contenta', 'a-host'))
@@ -207,6 +211,80 @@ import {normalizeCSS} from '@angular/platform-browser/testing/src/browser_util';
             .toEqual('[a="b"][a-host], [a="b"] [a-host] {}');
         expect(s(':host-context([a=b]) {}', 'contenta', 'a-host'))
             .toEqual('[a=b][a-host], [a="b"] [a-host] {}');
+      });
+
+      it('should handle multiple :host-context() selectors', () => {
+        expect(s(':host-context(.one):host-context(.two) {}', 'contenta', 'a-host'))
+            .toEqual(
+                '.one.two[a-host], ' +    // `one` and `two` both on the host
+                '.one.two [a-host], ' +   // `one` and `two` are both on the same ancestor
+                '.one .two[a-host], ' +   // `one` is an ancestor and `two` is on the host
+                '.one .two [a-host], ' +  // `one` and `two` are both ancestors (in that order)
+                '.two .one[a-host], ' +   // `two` is an ancestor and `one` is on the host
+                '.two .one [a-host]' +    // `two` and `one` are both ancestors (in that order)
+                ' {}');
+
+        expect(s(':host-context(.X):host-context(.Y):host-context(.Z) {}', 'contenta', 'a-host')
+                   .replace(/ \{\}$/, '')
+                   .split(/\,\s+/))
+            .toEqual([
+              '.X.Y.Z[a-host]',
+              '.X.Y.Z [a-host]',
+              '.X.Y .Z[a-host]',
+              '.X.Y .Z [a-host]',
+              '.X.Z .Y[a-host]',
+              '.X.Z .Y [a-host]',
+              '.X .Y.Z[a-host]',
+              '.X .Y.Z [a-host]',
+              '.X .Y .Z[a-host]',
+              '.X .Y .Z [a-host]',
+              '.X .Z .Y[a-host]',
+              '.X .Z .Y [a-host]',
+              '.Y.Z .X[a-host]',
+              '.Y.Z .X [a-host]',
+              '.Y .Z .X[a-host]',
+              '.Y .Z .X [a-host]',
+              '.Z .Y .X[a-host]',
+              '.Z .Y .X [a-host]',
+            ]);
+      });
+
+      // It is not clear what the behavior should be for a `:host-context` with no selectors.
+      // This test is checking that the result is backward compatible with previous behavior.
+      // Arguably it should actually be an error that should be reported.
+      it('should handle :host-context with no ancestor selectors', () => {
+        expect(s(':host-context .inner {}', 'contenta', 'a-host'))
+            .toEqual('[a-host] .inner[contenta] {}');
+        expect(s(':host-context() .inner {}', 'contenta', 'a-host'))
+            .toEqual('[a-host] .inner[contenta] {}');
+      });
+
+      // More than one selector such as this is not valid as part of the :host-context spec.
+      // This test is checking that the result is backward compatible with previous behavior.
+      // Arguably it should actually be an error that should be reported.
+      it('should handle selectors', () => {
+        expect(s(':host-context(.one,.two) .inner {}', 'contenta', 'a-host'))
+            .toEqual(
+                '.one[a-host] .inner[contenta], ' +
+                '.one [a-host] .inner[contenta], ' +
+                '.two[a-host] .inner[contenta], ' +
+                '.two [a-host] .inner[contenta] ' +
+                '{}');
+      });
+    });
+
+    describe((':host-context and :host combination selector'), () => {
+      it('should handle selectors on the same element', () => {
+        expect(s(':host-context(div):host(.x) > .y {}', 'contenta', 'a-host'))
+            .toEqual('div.x[a-host] > .y[contenta] {}');
+      });
+
+      it('should handle selectors on different elements', () => {
+        expect(s(':host-context(div) :host(.x) > .y {}', 'contenta', 'a-host'))
+            .toEqual('div .x[a-host] > .y[contenta] {}');
+
+        expect(s(':host-context(div) > :host(.x) > .y {}', 'contenta', 'a-host'))
+            .toEqual('div > .x[a-host] > .y[contenta] {}');
       });
     });
 
@@ -415,6 +493,34 @@ import {normalizeCSS} from '@angular/platform-browser/testing/src/browser_util';
                    (cssRule: CssRule) => new CssRule(cssRule.selector, cssRule.content + '2')))
             .toEqual('a {b2}');
       });
+    });
+  });
+
+  describe('repeatGroups()', () => {
+    it('should do nothing if `multiples` is 0', () => {
+      const groups = [['a1', 'b1', 'c1'], ['a2', 'b2', 'c2']];
+      repeatGroups(groups, 0);
+      expect(groups).toEqual([['a1', 'b1', 'c1'], ['a2', 'b2', 'c2']]);
+    });
+
+    it('should do nothing if `multiples` is 1', () => {
+      const groups = [['a1', 'b1', 'c1'], ['a2', 'b2', 'c2']];
+      repeatGroups(groups, 1);
+      expect(groups).toEqual([['a1', 'b1', 'c1'], ['a2', 'b2', 'c2']]);
+    });
+
+    it('should add clones of the original groups if `multiples` is greater than 1', () => {
+      const group1 = ['a1', 'b1', 'c1'];
+      const group2 = ['a2', 'b2', 'c2'];
+      const groups = [group1, group2];
+      repeatGroups(groups, 3);
+      expect(groups).toEqual([group1, group2, group1, group2, group1, group2]);
+      expect(groups[0]).toBe(group1);
+      expect(groups[1]).toBe(group2);
+      expect(groups[2]).not.toBe(group1);
+      expect(groups[3]).not.toBe(group2);
+      expect(groups[4]).not.toBe(group1);
+      expect(groups[5]).not.toBe(group2);
     });
   });
 }
