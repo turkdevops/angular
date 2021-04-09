@@ -19,7 +19,7 @@
     "zone.js": "file:../../dist/zone.js-dist/archive/zone.js.tgz"
   },
   "devDependencies": {
-    "@angular/bazel": "file:../../dist/packages-dist/bazel",
+    "@angular/bazel": "11.0.0",
     "@angular/compiler": "file:../../dist/packages-dist/compiler",
     "@angular/compiler-cli": "file:../../dist/packages-dist/compiler-cli",
     "@bazel/bazelisk": "file:../../node_modules/@bazel/bazelisk",
