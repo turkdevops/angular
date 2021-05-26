@@ -42,7 +42,7 @@
     "zone.js": "~0.10.3"
   },
   "devDependencies": {
-    "@angular/compiler-cli": "~11.0.1",
+    "@angular/compiler-cli": "~11.2.13",
     "@types/angular": "1.7.3",
     "@types/angular-animate": "1.5.10",
     "@types/angular-mocks": "1.7.0",
