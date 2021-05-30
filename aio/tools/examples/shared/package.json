@@ -50,7 +50,7 @@
     "@angular-devkit/build-angular": "~0.1100.2",
     "@angular/cli": "~11.0.2",
     "@angular/compiler-cli": "~11.0.1",
-    "@nguniversal/builders": "^11.0.0",
+    "@nguniversal/builders": "^11.2.1",
     "@types/angular": "1.7.3",
     "@types/angular-animate": "1.5.10",
     "@types/angular-mocks": "1.7.0",
