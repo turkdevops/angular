@@ -44,7 +44,7 @@
     "@angular-devkit/build-angular": "0.1100.0-rc.1",
     "@angular-devkit/build-optimizer": "0.1100.0-rc.1",
     "@angular-devkit/core": "11.0.0-rc.1",
-    "@angular-devkit/schematics": "11.0.0-rc.1",
+    "@angular-devkit/schematics": "11.2.12",
     "@babel/cli": "^7.8.4",
     "@babel/core": "^7.8.6",
     "@babel/generator": "^7.8.6",
