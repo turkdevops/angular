@@ -14,6 +14,6 @@
     "@angular/forms": "file:../../dist/packages-dist/forms",
     "@angular/platform-browser": "file:../../dist/packages-dist/platform-browser",
     "@angular/router": "file:../../dist/packages-dist/router",
-    "check-side-effects": "file:../../node_modules/check-side-effects"
+    "check-side-effects": "0.0.23"
   }
 }
