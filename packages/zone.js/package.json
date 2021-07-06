@@ -14,7 +14,7 @@
     "@externs/nodejs": "^1.5.0",
     "@types/node": "^10.9.4",
     "domino": "2.1.2",
-    "jest": "^26.4",
+    "jest": "^26.6.3",
     "google-closure-compiler": "^20200927.0.0",
     "mocha": "^3.1.2",
     "mock-require": "3.0.3",
